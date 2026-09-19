@@ -28,5 +28,10 @@ do not emulate the controller, Gunyah, electrical behavior or real interrupts.
 The imported historical binary/disassembly and whole-image/QEMU checks are
 not claimed as part of this public test suite.
 
+GitHub Actions independently passed the source checks and all fifteen mock
+executions on Ubuntu for public commit
+`6704af8427ddbe31e0eb7629741c9571427e052a`.
+See the [successful CI run](https://github.com/birkskyum/yoga-slim7x-usb4/actions/runs/35465196041).
+
 The clean ARM64 kernel/module build is in progress. The public export has
 not been hardware-booted and does not establish working endpoint MSI-X.
