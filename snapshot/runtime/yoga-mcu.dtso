@@ -1,0 +1,118 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/clock/qcom,x1e80100-gcc.h>
+#include <dt-bindings/interconnect/qcom,x1e80100-rpmh.h>
+#include <dt-bindings/interconnect/qcom,icc.h>
+#include <dt-bindings/phy/phy-qcom-qmp.h>
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+
+&{/} { birk,usb4-pci0-test; birk,usb4-native-cm-test; birk,usb4-mcu-ram-probe; birk,usb4-nhi-ram-probe; birk,usb4-typec-observer; birk,usb4-retimer-test; birk,usb4-link-test; birk,usb4-enumeration-test; birk,usb4-external-enumeration-test; };
+&{/} { birk,usb4-pci0-init-v23; };
+/* Internal SSD and Wi-Fi PCIe paths are outside the RAM-only storage test. */
+&pcie6a { status = "disabled"; };
+&pcie4 { status = "disabled"; };
+/* Only the ADSP is needed for the PMIC Type-C reporting service. */
+&remoteproc_cdsp { status = "disabled"; };
+/* Left rear only. PS8830 is manually loaded after MCU/NHI baseline passes. */
+&i2c1 { typec-mux@8 { status = "disabled"; }; };
+&i2c3 { typec-mux@8 { status = "okay"; }; };
+&i2c7 { typec-mux@8 { status = "disabled"; }; };
+&usb_1_ss0 { status = "disabled"; };
+&mdss { status = "disabled"; };
+&usb_1_ss0_qmpphy {
+	status = "okay";
+	reg = <0 0xfd5000 0 0x4000>, <0 0xfe4000 0 0x1000>;
+	reg-names = "phy", "usb4-dp-aux";
+	qcom,usb4-rx-eq = <0x6f>;
+};
+&soc {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	pcie-usb4-test@400000000 {
+		compatible = "birk,yoga-x1-pci0-test";
+		device_type = "pci";
+		reg = <4 0 0 0x10000000>, <0 0x1c28000 0 0x8000>;
+		reg-names = "ecam", "parf";
+		resets = <&gcc GCC_PCIE_0_TUNNEL_BCR>;
+		reset-names = "tunnel";
+		#address-cells = <3>;
+		#size-cells = <2>;
+		bus-range = <0 0xff>;
+		linux,pci-domain = <0>;
+		ranges = <0x02000000 0 0x40000000 0 0x40000000 0 0x10000000>,
+			 <0x03000000 4 0x10000000 4 0x10000000 0 0xf0000000>;
+		dma-coherent;
+		/* Gunyah owns PCIe SMMUv3, as for the existing Hamoa PCIe hosts.
+		 * This does not claim Linux-controlled DMA isolation for endpoints.
+		 */
+		msi-map = <0 &gic_its 0x80000 0x10000>;
+		#interrupt-cells = <1>;
+		interrupt-map-mask = <0 0 0 7>;
+		interrupt-map = <0 0 0 1 &intc 0 0 GIC_SPI 703 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 0 2 &intc 0 0 GIC_SPI 708 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 0 3 &intc 0 0 GIC_SPI 714 IRQ_TYPE_LEVEL_HIGH>,
+				<0 0 0 4 &intc 0 0 GIC_SPI 716 IRQ_TYPE_LEVEL_HIGH>;
+		power-domains = <&gcc GCC_PCIE_0_TUNNEL_GDSC>;
+		clocks = <&gcc GCC_USB4_0_PHY_PCIE_PIPE_CLK>,
+			 <&gcc GCC_CNOC_PCIE_TUNNEL_CLK>, <&gcc GCC_PCIE_0_PIPE_CLK>,
+			 <&gcc GCC_PCIE_0_CFG_AHB_CLK>, <&gcc GCC_PCIE_0_AUX_CLK>,
+			 <&gcc GCC_PCIE_0_SLV_Q2A_AXI_CLK>, <&gcc GCC_PCIE_0_SLV_AXI_CLK>,
+			 <&gcc GCC_PCIE_0_MSTR_AXI_CLK>;
+		clock-names = "usb4-pcie", "cnoc", "pipe", "cfg", "aux", "slv-q2a", "slv", "master";
+		interconnects = <&pcie_south_anoc MASTER_PCIE_0 QCOM_ICC_TAG_ALWAYS
+				 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>,
+				<&gem_noc MASTER_APPSS_PROC QCOM_ICC_TAG_ACTIVE_ONLY
+				 &config_noc SLAVE_PCIE_0_CFG QCOM_ICC_TAG_ACTIVE_ONLY>;
+		interconnect-names = "pcie-mem", "cpu-pcie";
+	};
+	usb4-mcu-test@15600000 {
+		compatible = "birk,yoga-x1-usb4-mcu-test";
+		reg = <0 0x15600000 0 0x100000>;
+		birk,empty-phyc;
+		interrupts = <GIC_SPI 472 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "nhi";
+		iommus = <&apps_smmu 0x1440 0>;
+		qcom,tcsr = <&tcsr>;
+		power-domains = <&gcc GCC_USB4_0_GDSC>;
+		clocks = <&gcc GCC_USB4_0_CFG_AHB_CLK>, <&gcc GCC_USB4_0_SYS_CLK>,
+			 <&gcc GCC_USB4_0_MASTER_CLK>, <&gcc GCC_AGGRE_USB4_0_AXI_CLK>,
+			 <&gcc GCC_USB4_0_TMU_CLK>, <&gcc GCC_USB4_0_SB_IF_CLK>;
+		clock-names = "ahb", "sys", "master", "axi", "tmu", "sb_if";
+		interconnects = <&gem_noc MASTER_APPSS_PROC 0 &config_noc SLAVE_USB4_0 0>,
+			<&usb_south_anoc MASTER_USB4_0 QCOM_ICC_TAG_ALWAYS
+			 &mc_virt SLAVE_EBI1 QCOM_ICC_TAG_ALWAYS>;
+		interconnect-names = "apps-usb4", "usb4-ddr";
+		phys = <&usb_1_ss0_qmpphy QMP_USB43DP_USB4_PHY>;
+		phy-names = "usb4";
+		pinctrl-names = "rx-prepare", "txb-prepare", "txa-prepare",
+				"rx-active", "txb-active", "txa-active";
+		pinctrl-0 = <&x1_rx_prepare>;
+		pinctrl-1 = <&x1_txb_prepare>;
+		pinctrl-2 = <&x1_txa_prepare>;
+		pinctrl-3 = <&x1_rx_active>;
+		pinctrl-4 = <&x1_txb_active>;
+		pinctrl-5 = <&x1_txa_active>;
+	};
+};
+&tlmm {
+	x1_rx_prepare: x1-usb4-rx-prepare {
+		pins = "gpio163"; function = "gpio"; bias-pull-down; output-disable;
+	};
+	x1_txb_prepare: x1-usb4-txb-prepare {
+		pins = "gpio165"; drive-strength = <10>; output-high;
+	};
+	x1_txa_prepare: x1-usb4-txa-prepare {
+		pins = "gpio164"; function = "gpio"; drive-strength = <10>;
+		bias-pull-down; output-low;
+	};
+	x1_rx_active: x1-usb4-rx-active {
+		pins = "gpio163"; function = "usb0_sbrx"; bias-disable; output-disable;
+	};
+	x1_txb_active: x1-usb4-txb-active {
+		pins = "gpio165"; function = "usb0_sbtx"; drive-strength = <10>;
+	};
+	x1_txa_active: x1-usb4-txa-active {
+		pins = "gpio164"; function = "usb0_sbtx"; drive-strength = <10>;
+		bias-pull-up; output-disable;
+	};
+};

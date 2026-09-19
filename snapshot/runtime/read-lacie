@@ -1,0 +1,72 @@
+#!/bin/busybox sh
+# Private v19 bounded raw READ. No device chosen by enumeration order alone.
+set -eu
+[ "$#" -eq 0 ] || exit 2
+fail() { echo "READ STOP: $*" | tee /run/read-result; exit 1; }
+[ -e /proc/device-tree/birk,usb4-native-cm-test ] &&
+[ -e /proc/device-tree/birk,usb4-pci0-test ] || fail 'wrong image'
+case " $(cat /proc/cmdline) " in *' yoga_x1_mcu_probe=1 '*) ;; *) fail 'wrong boot' ;; esac
+awk '$3 != "rootfs" && $3 != "tmpfs" && $3 != "devtmpfs" && $3 != "proc" && $3 != "sysfs" { bad=1 } END { exit bad }' /proc/mounts || fail 'non-RAM mount'
+[ ! -e /run/read-attempted ] || fail 'one attempt per cold boot'
+touch /run/read-attempted
+echo 'READ ATTEMPTED: validation in progress, not a pass' > /run/read-result
+bridge= count=0
+for d in /sys/bus/platform/devices/*.pcie-usb4-test; do
+    [ -f "$d/endpoint" ] || continue
+    bridge=$d; count=$((count + 1))
+done
+[ "$count" -eq 1 ] || fail 'private PCI0 bridge missing or ambiguous'
+bdf=$(cat "$bridge/endpoint")
+echo "$bdf" | grep -Eq '^0000:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$' || fail 'no validated external endpoint'
+bridge_path=$(readlink -f "$bridge")
+endpoint_path=$(readlink -f "/sys/bus/pci/devices/$bdf")
+case "$endpoint_path" in "$bridge_path"/pci0000:00/*) ;; *) fail 'endpoint outside private bridge' ;; esac
+[ "$(cat "$endpoint_path/class")" = 0x010802 ] || fail 'endpoint is not NVMe'
+[ ! -e "$endpoint_path/driver" ] || fail 'storage driver already bound'
+check_link() {
+    matches=0
+    for o in /sys/bus/auxiliary/devices/pmic_glink.altmode.*; do
+        [ -f "$o/link_result" ] || continue
+        grep -q '^LINK attempted=1 errno=0;' "$o/link_result" || return 1
+        grep -q '^CONNECTION_VALID valid=1$' "$o/connection_valid" || return 1
+        matches=$((matches + 1))
+    done
+    [ "$matches" -eq 1 ] && [ "$(cat "$bridge/endpoint")" = "$bdf" ]
+}
+check_link || fail 'USB4 connection no longer valid'
+for d in /sys/class/nvme/nvme*; do [ ! -e "$d" ] || fail 'NVMe controller already present'; done
+echo 'READ: loading guarded NVMe module for the sole external endpoint.'
+echo 'V33 NVME MODPROBE BEGIN'
+if modprobe nvme; then
+    echo 'V33 NVME MODPROBE END errno=0'
+else
+    rc=$?
+    echo "V33 NVME MODPROBE END errno=$rc"
+    fail 'NVMe module refused'
+fi
+echo 'V33 NVME NAMESPACE WAIT BEGIN (up to 30 seconds after modprobe returns)'
+n=0; disk=; count=0
+while [ "$n" -lt 30 ]; do
+    disk=; count=0
+    for d in /sys/class/block/nvme*n*; do
+        [ -e "$d" ] || continue
+        [ ! -e "$d/partition" ] || continue
+        disk=${d##*/}; count=$((count + 1))
+    done
+    [ "$count" -eq 0 ] || break
+    sleep 1; n=$((n + 1))
+done
+echo "V33 NVME NAMESPACE WAIT END count=$count elapsed=$n"
+[ "$count" -eq 1 ] || fail 'no single whole-disk namespace'
+disk_path=$(readlink -f "/sys/class/block/$disk")
+case "$disk_path" in "$endpoint_path"/nvme/nvme[0-9]*/nvme[0-9]*n[0-9]*) ;; *) fail 'namespace does not belong to validated endpoint' ;; esac
+[ "$(cat "/sys/class/block/$disk/ro")" = 1 ] || fail 'namespace is not read-only'
+[ "$(cat "/sys/class/block/$disk/size")" -ge 8 ] || fail 'namespace too small'
+[ -b "/dev/$disk" ] || fail 'block device missing'
+check_link || fail 'USB4 disconnected before read'
+echo "READ BEGIN: external $bdf /dev/$disk, offset 0, 4096 bytes -> RAM only."
+timeout -s KILL 20 dd "if=/dev/$disk" of=/run/lacie-first4k.bin bs=4096 count=1 || fail 'read failed or timed out; full shutdown required'
+[ "$(wc -c < /run/lacie-first4k.bin)" -eq 4096 ] || fail 'short read'
+check_link || fail 'USB4 changed during read'
+digest=$(sha256sum /run/lacie-first4k.bin | awk '{print $1}')
+echo "READ PASS: external $bdf /dev/$disk bytes=4096 sha256=$digest (RAM capture, no mount)" | tee /run/read-result

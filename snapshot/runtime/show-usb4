@@ -1,0 +1,14 @@
+#!/bin/busybox sh
+# Replay RAM evidence; never rerun a test or access any disk.
+case ${1:-summary} in
+    summary) cat /run/topology-summary.log ;;
+    caps) grep -F 'TOPO RAW' /run/typec.log | more ;;
+    platform) more /run/platform.log ;;
+    native) tail -n 60 /run/native.log ;;
+    irq) cat /run/irq.log ;;
+    irq-full) cat /run/irq-full.log ;;
+    receiver) cat /run/receiver.log ;;
+    its) cat /run/its.log ;;
+    tunnel) grep -E 'V33 (TUNNEL|CFG) ' /run/native.log | tail -n 80 ;;
+    *) echo 'Usage: show-usb4 [summary|native|its|receiver|irq|irq-full|tunnel|caps|platform]'; exit 2 ;;
+esac

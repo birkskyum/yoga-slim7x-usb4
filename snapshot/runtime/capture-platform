@@ -1,0 +1,44 @@
+#!/bin/busybox sh
+# Read existing DT/sysfs metadata only: no config/resource reads, rescan or bind.
+set -eu
+[ "$#" -eq 0 ] || exit 2
+echo 'PLATFORM inventory only; IOMMU metadata is NOT endpoint DMA validation.'
+n=0
+for d in /proc/device-tree/soc@0/pcie@*; do
+    [ -d "$d" ] || continue
+    n=$((n + 1)); [ "$n" -le 16 ] || break
+    echo "DT host=${d##*/}"
+    for p in status compatible; do
+        [ ! -f "$d/$p" ] || { printf '%s=' "$p"; tr '\000' ' ' < "$d/$p"; echo; }
+    done
+    for p in reg ranges linux,pci-domain bus-range iommu-map iommu-map-mask iommus msi-map; do
+        if [ -f "$d/$p" ]; then
+            echo "DT $p (raw big-endian bytes)"; od -An -tx1 -N 256 "$d/$p"
+        else echo "DT $p absent"; fi
+    done
+done
+n=0
+for d in /sys/bus/platform/devices/*.pcie; do
+    [ -d "$d" ] || continue
+    n=$((n + 1)); [ "$n" -le 16 ] || { echo 'PLATFORM truncated'; break; }
+    echo "PLATFORM host=${d##*/} driver=$(readlink "$d/driver" || true) group=$(readlink "$d/iommu_group" || true)"
+    for p in status compatible; do
+        [ ! -f "$d/of_node/$p" ] || { printf '%s=' "$p"; tr '\000' ' ' < "$d/of_node/$p"; echo; }
+    done
+    for p in reg linux,pci-domain bus-range iommu-map iommu-map-mask iommus msi-map msi-map-mask; do
+        [ ! -f "$d/of_node/$p" ] || { echo "DT $p (raw big-endian bytes)"; od -An -tx1 -N 256 "$d/of_node/$p"; }
+    done
+    [ ! -f "$d/power/runtime_status" ] || { printf 'runtime='; cat "$d/power/runtime_status"; }
+done
+n=0
+for d in /sys/bus/pci/devices/*; do
+    [ -d "$d" ] || continue
+    n=$((n + 1)); [ "$n" -le 64 ] || { echo 'PCI inventory truncated'; break; }
+    echo "PCI ${d##*/} driver=$(readlink "$d/driver" || true) group=$(readlink "$d/iommu_group" || true)"
+    # Cached IDs/class, not PCI config space or BAR resources.
+    for p in vendor device class; do
+        [ ! -f "$d/$p" ] || { printf '%s=' "$p"; cat "$d/$p"; }
+    done
+    [ ! -f "$d/iommu_group/type" ] || { printf 'iommu_type='; cat "$d/iommu_group/type"; }
+done
+echo 'No PCI rescan, config/BAR access, driver bind or bus-master change performed.'

@@ -1,0 +1,287 @@
+#!/bin/busybox sh
+set -eu
+[ "$#" -eq 0 ] || { echo 'Usage: probe-usb4'; exit 2; }
+case " $(cat /proc/cmdline) " in
+    *' yoga_x1_mcu_probe=1 '*) ;;
+    *) echo 'REFUSED: wrong diagnostic boot'; exit 1 ;;
+esac
+[ -e /proc/device-tree/birk,usb4-retimer-test ] || exit 1
+[ -e /proc/device-tree/birk,usb4-link-test ] || exit 1
+[ -e /proc/device-tree/birk,usb4-enumeration-test ] || exit 1
+[ -e /proc/device-tree/birk,usb4-external-enumeration-test ] || exit 1
+[ -e /proc/device-tree/birk,usb4-native-cm-test ] || exit 1
+[ -e /proc/device-tree/birk,usb4-pci0-test ] || exit 1
+[ -e /proc/device-tree/birk,usb4-pci0-init-v23 ] || exit 1
+tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'lenovo,yoga-slim7x' || exit 1
+awk '$3 != "rootfs" && $3 != "tmpfs" && $3 != "devtmpfs" && $3 != "proc" && $3 != "sysfs" { bad=1 } END { exit bad }' /proc/mounts || exit 1
+if [ -e /run/typec-attempted ] || [ -e /run/mcu-attempted ]; then
+    echo 'REFUSED: this cold boot already attempted a test.'
+    echo 'Power off fully. Next boot run ONLY probe-usb4, not probe-mcu first.'
+    echo 'No LaCie connection is requested. Leave it disconnected.'
+    exit 1
+fi
+touch /run/typec-attempted
+observer= ucsi= retimer= pdlog= stage=preparation connected_prompt=0 finished=0 policy_started=0
+finish() {
+    rc=$?
+    for d in /sys/bus/platform/devices/15600000.usb4-mcu-test; do
+        if [ -f "$d/control_stop" ]; then echo 1 > "$d/control_stop" || true; fi
+    done
+    if [ "$policy_started" -eq 1 ]; then echo 0 > "$ucsi/policy" || true; fi
+    if [ -n "$pdlog" ]; then echo 0 > "$pdlog/capture" || true; fi
+    if [ -n "$observer" ]; then echo 0 > "$observer/observe" || true; fi
+    dmesg -n 3
+    dmesg > /run/typec.log
+    grep -F 'V37 RECEIVER ' /run/typec.log > /run/receiver.log || true
+    grep -F 'V38 ITS ' /run/typec.log > /run/its.log || true
+    grep -E 'V33 (NVME|TUNNEL|CFG|IRQ) |NATIVE |PCI0 |thunderbolt|nvme.*timeout|usb4-mcu-test.*(timeout|failed|hotplug|RX:|acking)' /run/typec.log > /run/native.log || true
+    {
+        echo 'V33 IRQ EVIDENCE: MSI-X only / one I/O queue; not a disk-write test.'
+        echo 'No synthetic interrupts. Compare setup and first timeout; PBA=0 does not prove delivery.'
+        grep -F 'V33 IRQ ' /run/typec.log || true
+        echo 'NVMe interrupt counts at test end:'
+        grep -i nvme /proc/interrupts || true
+        echo 'Completion-polling timeout lines:'
+        grep -c 'completion polled' /run/typec.log || true
+    } > /run/irq-full.log
+    {
+        head -n 2 /run/irq-full.log
+        grep -E 'V33 IRQ (TIMEOUT|FLAGS|ENTRY END|PBA END|PBA SKIP|ERROR END|ERROR SKIP|HEADER) ' /run/typec.log || true
+        echo 'NVMe interrupt counts at test end:'
+        grep -i nvme /proc/interrupts || true
+        echo 'Completion-polling timeout lines:'
+        grep -c 'completion polled' /run/typec.log || true
+    } > /run/irq.log
+    echo
+    echo "V38 SUMMARY stage=$stage completed=$finished script_status=$rc"
+    grep -E 'NHI READ PASS|NHI CONTROL COMPLETE|RETIMER |PAN APPLY|UCSI QUERY|UCSI STATUS' /run/typec.log | tail -n 24 || true
+    if [ -n "$observer" ]; then cat "$observer/result"; fi
+    if [ -n "$retimer" ]; then cat "$retimer/diag_status"; fi
+    if [ -f /run/ucsi-rounds ]; then cat /run/ucsi-rounds; fi
+    if [ -n "$ucsi" ]; then head -n 2 "$ucsi/result"; fi
+    if [ -n "$pdlog" ]; then
+        cat "$pdlog/status"
+        if grep -q ' nonempty=0 ' "$pdlog/status"; then
+            echo 'Firmware supplied no text: logging may be disabled; this does not identify the cause.'
+        fi
+    fi
+    grep -iE 'PDLOG.*(USB4|TBT|Enter.?USB|discovery|VDM|enterprise|minimum power|PPM Init|NotifyEn|PAN ACK|PAN EN|PAN Init)' /run/typec.log > /run/negotiation.log || true
+    echo 'UCSI NOTIFICATION/EVENT EVIDENCE (last 16 lines):'
+    grep -E 'UCSI POLICY|UCSI EVENT' /run/typec.log | tail -n 16 || true
+    echo 'READINESS EVIDENCE (last 24 lines; full filtered log retained):'
+    grep -iE 'PPM Init|NotifyEn|VDMReady' /run/negotiation.log | tail -n 24 || true
+    echo 'USB4/VDM EVIDENCE (last 24 lines; no generic battery warnings):'
+    grep -iE 'Enter.?USB|USB4|TBT|discovery|enterprise|minimum power|VDM' /run/negotiation.log | tail -n 24 || true
+    grep -F 'PAN capture stopped:' /run/typec.log || true
+    echo 'Photograph this summary. Full RAM log: /run/typec.log; filtered: /run/negotiation.log.'
+    echo 'LINK CHECKPOINT EVIDENCE:'
+    grep -F 'LINK EVENT' /run/typec.log | tail -n 12 || true
+    grep -E 'LINK ROOT|LINK PRIMARY|LINK reply error' /run/typec.log | tail -n 12 || true
+    grep -F 'LINK LANE' /run/typec.log | tail -n 8 || true
+    grep -E 'LINK MCU CONNECT|LINK EXTERNAL|LINK CHECKPOINT|LINK CONTROL STOPPED' /run/typec.log | tail -n 8 || true
+    if [ -n "$observer" ] && [ -f "$observer/link_result" ]; then cat "$observer/link_result"; fi
+    capture-platform > /run/platform.log 2>&1 || true
+    {
+        echo "V38 READ-ONLY stage=$stage completed=$finished script_status=$rc"
+        cat /run/receiver.log
+        grep -E 'V33 (NVME|TUNNEL|CFG) |NATIVE |PCI0 |nvme nvme|NHI isolation|MCU checkpoint' /run/typec.log | tail -n 28 || true
+        grep -E '^PLATFORM host=|^PCI ' /run/platform.log | head -n 6 || true
+        if [ -f /run/read-result ]; then cat /run/read-result; else echo 'READ NOT ATTEMPTED'; fi
+        echo 'V38 ITS report: show-usb4 its. Global/sticky, not MSI-X success.'
+        grep -E 'V38 ITS (AUDIT|SKIP|REPORT) ' /run/its.log || true
+        echo 'V33 IRQ counts (late evidence: show-usb4 irq; full: show-usb4 irq-full):'
+        echo 'No synthetic interrupts; counts alone do not prove reliable MSI-X completion.'
+        grep -F 'V33 IRQ TIMEOUT ' /run/typec.log || true
+        grep -i nvme /proc/interrupts || true
+        printf 'Completion-polling timeout lines: '
+        grep -c 'completion polled' /run/typec.log || true
+    } > /run/topology-summary.log
+    echo
+    cat /run/topology-summary.log
+    echo 'Native failure details saved in RAM: show-usb4 native (no retry or hardware access).'
+    echo 'Photograph show-usb4 irq as well: setup versus timeout masks, PBA and PCIe errors.'
+    echo 'Photograph V38 READ-ONLY above, then show-usb4 its. Replay: show-usb4.'
+    echo 'Only READ PASS confirms disk data; bridge/tunnel/enumeration messages do not.'
+    echo 'No filesystem was mounted. No disk-write test was performed.'
+    echo 'Now poweroff -f. No test retry until a full shutdown.'
+    if [ "$connected_prompt" -eq 1 ]; then
+        echo 'If LaCie is connected, disconnect it after shutdown.'
+    else
+        echo 'No LaCie connection was requested; leave it disconnected.'
+    fi
+}
+trap finish EXIT
+check_policy() {
+    [ "$policy_started" -eq 1 ] || return 0
+    if ! grep -q '^UCSI_POLICY attempted=1 active=1 ' "$ucsi/result" ||
+       ! grep -q '^UCSI_QUERY .* errno=0$' "$ucsi/result"; then
+        echo 'STOP: UCSI notification handler ended or failed. No retry.'
+        return 1
+    fi
+}
+check_pdlog() {
+    check_policy || return 1
+    cat "$pdlog/status"
+    if ! grep -q ' active=1 .* errno=0$' "$pdlog/status"; then
+        echo 'STOP: firmware log capture ended or failed; no retry. Photograph the summary.'
+        return 1
+    fi
+}
+query_ucsi() {
+    echo "Fresh UCSI query: $stage (may take up to 60 seconds)."
+    if ! echo 1 > "$ucsi/query"; then
+        echo "UCSI ROUND $stage FAILED" >> /run/ucsi-rounds
+        cat "$ucsi/result" | tee -a /run/ucsi-rounds
+        echo 'STOP: UCSI command failed. No reset or retry; photograph the summary.'
+        return 1
+    fi
+    echo "UCSI ROUND $stage" >> /run/ucsi-rounds
+    cat "$ucsi/result" | tee -a /run/ucsi-rounds
+    grep -q '^UCSI_QUERY .* errno=0$' "$ucsi/result"
+}
+settle() {
+    check_policy || return 1
+    sleep 8
+    n=0
+    while [ "$n" -lt 20 ]; do
+        grep -q 'errno=0$' "$observer/result" || return 1
+        if awk 'NR==1 { for(i=1;i<=NF;i++){split($i,a,"=");v[a[1]]=a[2]} exit !(v["events"]==v["processed"] && v["active"]==1 && v["service_up"]==1) }' "$observer/result"; then
+            check_policy || return 1
+            return 0
+        fi
+        sleep 1
+        n=$((n + 1))
+    done
+    echo 'STOP: PAN processing did not settle; no retry.'
+    return 1
+}
+echo 'Unplug the SanDisk from the Yoga now; this entire system is in RAM.'
+echo 'Keep LaCie disconnected. Keep any charger on the RIGHT-HAND port.'
+echo 'Press Enter within 120 seconds when the left rear USB-C port (nearest hinge) is empty.'
+read -r -t 120 answer || { echo 'STOP: Enter was not received (120-second timeout or input ended). No connection test ran.'; exit 1; }
+stage=controller
+probe-mcu || exit 1
+stage=retimer-provider
+echo 'Loading the left-rear PS8830 owner after the controller checkpoint.'
+modprobe ps883x || exit 1
+n=0
+while [ "$n" -lt 10 ]; do
+    for d in /sys/bus/i2c/devices/*-0008; do
+        if [ -f "$d/diag_status" ]; then retimer=$d; break; fi
+    done
+    [ -z "$retimer" ] || break
+    sleep 1
+    n=$((n + 1))
+done
+if [ -z "$retimer" ]; then
+    echo 'STOP: left-rear retimer did not become ready. Do NOT connect LaCie.'
+    dmesg | grep -Ei 'retimer|ps883|defer|regulator|i2c|failed|error' | tail -n 20
+    exit 1
+fi
+cat "$retimer/diag_status"
+stage=firmware-reporting
+echo 'Starting the stock Yoga ADSP firmware for Type-C reporting.'
+modprobe qcom_q6v5_pas || exit 1
+stage=pdlog-provider
+n=0
+while [ "$n" -lt 30 ]; do
+    for d in /sys/bus/rpmsg/devices/*; do
+        if [ -f "$d/capture" ] && [ -f "$d/status" ] && grep -q '^PDLOG ' "$d/status"; then pdlog=$d; break; fi
+    done
+    [ -z "$pdlog" ] || break
+    sleep 1
+    n=$((n + 1))
+done
+if [ -z "$pdlog" ]; then
+    echo 'STOP: PMIC firmware-log service is unavailable. Do NOT connect LaCie.'
+    dmesg | grep -Ei 'rpmsg|glink|adsp|pdlog|failed|error' | tail -n 20
+    exit 1
+fi
+dmesg -n 3
+echo 1 > "$pdlog/capture" || exit 1
+echo 'Capturing firmware text in RAM for at most 300 seconds / 128 requests.'
+stage=firmware-reporting
+n=0
+while [ "$n" -lt 30 ]; do
+    for d in /sys/bus/auxiliary/devices/pmic_glink.altmode.*; do
+        if [ -f "$d/result" ] && grep -q '^service_up=1 ' "$d/result"; then observer=$d; break; fi
+    done
+    [ -z "$observer" ] || break
+    sleep 1
+    n=$((n + 1))
+done
+if [ -z "$observer" ]; then
+    echo 'STOP: Type-C service did not become ready. Do NOT connect LaCie.'
+    dmesg | grep -Ei 'remoteproc|adsp|glink|pdr|qmi|firmware|provider|failed|error' | tail -n 22
+    exit 1
+fi
+stage=ucsi-provider
+n=0
+while [ "$n" -lt 10 ]; do
+    for d in /sys/bus/auxiliary/devices/pmic_glink.ucsi.*; do
+        if [ -f "$d/query" ] && [ -f "$d/policy" ] && grep -q '^UCSI_QUERY service_up=1 ' "$d/result"; then ucsi=$d; break; fi
+    done
+    [ -z "$ucsi" ] || break
+    sleep 1
+    n=$((n + 1))
+done
+if [ -z "$ucsi" ]; then
+    echo 'STOP: UCSI query service did not become ready. Do NOT connect LaCie.'
+    exit 1
+fi
+stage=empty-port-baseline
+query_ucsi || exit 1
+echo 1 > "$observer/observe" || exit 1
+settle || exit 1
+check_pdlog || exit 1
+cat "$observer/result"
+stage=notification-enable
+echo 'Enabling supported UCSI notifications and bounded connector-event ACK handling.'
+echo 'This changes the RAM-only UCSI session, not firmware files. No reset or forced mode.'
+policy_started=1
+echo 1 > "$ucsi/policy" || exit 1
+settle || exit 1
+check_pdlog || exit 1
+cat "$ucsi/result"
+echo
+echo 'CONNECT NOW: plug LaCie directly into LEFT REAR USB-C, nearest hinge.'
+echo 'V33 CRASH CAPTURE: start a phone video of the screen BEFORE pressing Enter.'
+echo 'Live BEGIN/END lines follow. If it restarts, keep the last frames; do not retry.'
+echo 'Use its normal USB4 cable, no dock. Press Enter after plugging it in.'
+echo 'This verifies LaCie identity, attempts a PCIe tunnel, then a read-only 4096-byte disk check.'
+echo 'Leave this cable orientation unchanged until full shutdown.'
+connected_prompt=1
+stage=first-orientation
+echo 'Press Enter within 120 seconds. The test stops if input times out.'
+read -r -t 120 answer || { echo 'STOP: Enter was not received (120-second timeout or input ended). No link attempt ran.'; exit 1; }
+settle || exit 1
+cat "$observer/result"
+cat "$retimer/diag_status"
+query_ucsi || exit 1
+settle || exit 1
+check_pdlog || exit 1
+stage=usb4-ready
+echo 'Waiting up to 45 seconds for an ACKed USB4 PAN and the supported cable parameters.'
+[ -f "$observer/link_ready" ] && [ -f "$observer/link" ] || exit 1
+n=0
+while [ "$n" -lt 45 ]; do
+    check_policy || exit 1
+    grep -q 'errno=0$' "$observer/result" || exit 1
+    if grep -q '^LINK_READY ready=1 word=00002[57]01 errno=0$' "$observer/link_ready"; then break; fi
+    sleep 1
+    n=$((n + 1))
+done
+cat "$observer/link_ready"
+[ "$n" -lt 45 ] || { echo 'STOP: supported USB4 connection not ready; no MCU connect sent.'; exit 1; }
+stage=controller-link
+echo 'One MCU connect: native enumeration, PCI0 root-mode/reset setup, PCIe tunnel, training and endpoint inventory.'
+echo 'One automatic rescan is allowed only for a transient preconfiguration failure; identity checks stay strict.'
+echo 'Do not unplug the cable. Each subsequent step requires the preceding check to pass.'
+echo 'V33 LINK CALL BEGIN: live kernel checkpoints enabled; no disk writes.'
+echo 1 > "$observer/link" || exit 1
+echo 'V33 LINK CALL END'
+cat "$observer/link_result"
+stage=disk-read
+read-lacie || exit 1
+stage=finished
+finished=1

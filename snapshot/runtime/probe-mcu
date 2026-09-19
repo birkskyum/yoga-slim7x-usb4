@@ -1,0 +1,52 @@
+#!/bin/busybox sh
+set -eu
+reference_only=0
+case "$#:${1:-}" in
+    0:) ;;
+    1:--reference-only) reference_only=1 ;;
+    *) echo 'Usage: probe-mcu [--reference-only]'; exit 2 ;;
+esac
+case " $(cat /proc/cmdline) " in
+    *' yoga_x1_mcu_probe=1 '*) ;;
+    *) echo 'REFUSED: not the dedicated MCU probe boot'; exit 1 ;;
+esac
+[ -e /proc/device-tree/birk,usb4-mcu-ram-probe ] || {
+    echo 'REFUSED: diagnostic DT missing'; exit 1;
+}
+tr '\000' '\n' < /proc/device-tree/compatible | grep -qx 'lenovo,yoga-slim7x' || {
+    echo 'REFUSED: not the Yoga board'; exit 1;
+}
+awk '$3 != "rootfs" && $3 != "tmpfs" && $3 != "devtmpfs" && $3 != "proc" && $3 != "sysfs" { bad=1 } END { exit bad }' /proc/mounts || {
+    echo 'REFUSED: filesystem outside the RAM-only allowlist'; exit 1;
+}
+[ ! -e /run/mcu-attempted ] || { echo 'REFUSED: one attempt per cold boot'; exit 1; }
+touch /run/mcu-attempted
+if [ "$reference_only" -eq 1 ]; then
+    echo 'Reference-clock comparison: read 1200c and STOP before PHY selection/firmware.'
+else
+    echo 'Starting MCU + native Linux connection manager. Keep all data devices disconnected.'
+fi
+dmesg -n 7
+insmod "/lib/modules/$(uname -r)/extra/yoga_x1_mcu_probe.ko" run=1 reference_only="$reference_only" || {
+    echo 'Module load failed. Photograph messages and shut down; do not retry.';
+    exit 1;
+}
+sleep 2
+dmesg > /run/mcu.log
+dmesg -n 3
+result=/sys/bus/platform/devices/15600000.usb4-mcu-test/result
+if [ -f "$result" ]; then
+    echo 'Last diagnostic details (full log: /run/mcu.log):'
+    grep -E 'NATIVE|NHI isolation|NHI REFUSED|MCU checkpoint' /run/mcu.log | tail -n 10
+    cat "$result"
+    if [ "$reference_only" -eq 1 ]; then
+        grep -q '^REFERENCE READ COMPLETE' "$result"
+    else
+        grep -q '^CONTROL READS COMPLETE ' "$result"
+        grep -q 'NATIVE CM READY:' /run/mcu.log
+    fi
+else
+    echo 'MCU CHECK INCOMPLETE. Photograph these messages, then poweroff -f.'
+    dmesg | grep -E 'yoga-x1|usb4-mcu|qmp|GDSC|clock.*stuck|deferred|REFUSED' | tail -n 25
+    exit 1
+fi

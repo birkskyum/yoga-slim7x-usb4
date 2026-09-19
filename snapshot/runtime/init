@@ -1,0 +1,54 @@
+#!/bin/busybox sh
+export PATH=/bin:/sbin
+/bin/busybox --install -s /bin
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /run
+echo /bin/false > /proc/sys/kernel/modprobe
+dmesg -n 3
+echo
+echo 'YOGA X1 USB4 READ-ONLY v38. RAM-only; NOT an installer.'
+echo 'Native Linux USB4 manager -> private PCI0 bridge -> PCIe tunnel -> 4096-byte disk read.'
+echo 'Experimental: a failure or hang requires full power-off. No success is assumed.'
+echo 'v38 checks optional ITS unmapped-message reports, only if the controller supports them.'
+echo 'Global sticky evidence only. No report/unsupported is NOT proof of delivery.'
+echo 'MSI-X only, one I/O queue. No RAM witness, synthetic IRQ, routing change or networking.'
+echo 'Record video before connecting LaCie/pressing Enter; it may restart again.'
+echo 'Exact LaCie identity required. Internal SSD and Wi-Fi PCIe are disabled.'
+echo 'NVMe loaded only for one validated external endpoint; namespace writes are rejected.'
+echo 'No filesystem mounting, formatting, firmware flashing or disk writes.'
+uname -r
+echo 'This manual test uploads and executes X1 controller firmware.'
+echo 'It DOES NOT run automatically. Disk-read success requires READ PASS, not enumeration.'
+sleep 2
+dmesg > /run/boot.log
+echo
+echo 'Keep the LaCie and all other data peripherals DISCONNECTED.'
+echo 'Type ONLY probe-usb4 ONCE. Do NOT run probe-mcu first.'
+echo 'Connect LaCie ONLY when told CONNECT NOW.'
+echo 'It first asks you to remove SanDisk and leave the left rear USB-C port empty.'
+echo 'Then type poweroff -f. A hang requires holding the power button.'
+echo 'Do not unplug or reverse LaCie after connecting. Cold shutdown is required after this test.'
+case " $(cat /proc/cmdline) " in
+    *' yoga_probe_vm=1 '*)
+        echo 'VM: shell must refuse this wrong-board fixture'
+        probe-mcu
+        test "$?" -ne 0 || echo 'VM SAFETY FAILURE'
+        probe-mcu --reference-only
+        test "$?" -ne 0 || echo 'VM SAFETY FAILURE'
+        echo 'VM: exact production module must refuse before mapping resources'
+        vm_reference_only=0
+        case " $(cat /proc/cmdline) " in
+            *' yoga_probe_reference_vm=1 '*) vm_reference_only=1 ;;
+        esac
+        echo "VM: fresh module load reference_only=$vm_reference_only"
+        insmod "/lib/modules/$(uname -r)/extra/yoga_x1_mcu_probe.ko" run=1 reference_only="$vm_reference_only"
+        dmesg | grep -F 'REFUSED: exact RAM-only Yoga image and board configuration required' || echo 'VM SAFETY FAILURE'
+        test ! -e /sys/bus/platform/devices/15600000.usb4-mcu-test/result || echo 'VM SAFETY FAILURE'
+        echo 'VM REFUSAL TEST FINISHED'
+        poweroff -f
+        ;;
+esac
+while :; do setsid cttyhack sh; done
