@@ -49,10 +49,17 @@ IOVA-aware MSI address checks, supplemental DT/config sources, evidence audit
 and offline tests. [EL2-PREP.md](EL2-PREP.md) records the source attribution,
 IORT calibration and limits. No EL2 USB4 hardware result is claimed.
 
+The initial candidate's ADSP mapping was subsequently removed after reviewing
+the owner's earlier successful EL2/KVM boots and preceding SMMU fault storm.
+The DSP policy follows Jens Glathe's non-PAS overlay split, not a new fix
+claimed here. The earlier KVM test did not validate full ADSP/PMIC startup.
+
 `provenance/export.json` retains every original `private_source_sha256`.
 For modified exports it additionally retains `v38_export_sha256` and marks
 `changed_since_v38_export`. Newly authored snapshot files have no private
 source hash. The current `public_sha256` covers the browsable derivative.
+Later edits to newly authored files retain `initial_source_sha256` and
+`changed_since_initial_source`; they are not mislabeled as v38 exports.
 The original `changed_for_publication` flag continues to describe the initial
 export, not later development.
 

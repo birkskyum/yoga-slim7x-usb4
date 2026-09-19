@@ -2,6 +2,8 @@
 /* SOURCE-ONLY CANDIDATE, NOT A BOOTABLE IMAGE.
  * Apply after yoga-mcu.dtso, only with an independently verified EL2 loader.
  * Adapted from the pinned baseline's qcom/x1-el2.dtso (Nikita Travkin et al.).
+ * Keep Jens Glathe's non-PAS DSP policy, commit ce20a20db795:
+ * no top-level ADSP/CDSP iommus. This Yoga faulted with the PAS mapping.
  * Never apply to a Gunyah/EL1 boot: SMMUv3 probes before PCI0's own guards.
  * See docs/EL2-PREP.md for evidence, limitations and required pre-boot checks.
  */
@@ -13,7 +15,11 @@
 &sbsa_watchdog { status = "disabled"; };
 &gpu_zap_shader { status = "disabled"; };
 &iris { status = "disabled"; };
-&remoteproc_adsp { iommus = <&apps_smmu 0x1000 0x80>; };
+/* Deliberately do not add ADSP/CDSP iommus. The input base must lack them;
+ * check-el2-dt.py checks the composed tree and rejects a PAS input tree.
+ * An overlay /delete-property/ cannot remove a property in the input DTB.
+ * Non-PAS boot success does not validate ADSP startup for the USB4 probe.
+ */
 &remoteproc_cdsp { status = "disabled"; };
 
 /* Do not enable or probe the internal SSD, Wi-Fi or other PCIe hosts. */

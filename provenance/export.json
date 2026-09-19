@@ -545,7 +545,9 @@
       "private_source_sha256": null,
       "origin": "EL2 source-only preparation",
       "changed_for_publication": false,
-      "public_sha256": "97ab2617199f77248fbc0c868e15fa6425de0dc7bf523a65faf5f205ec9efb24"
+      "public_sha256": "b7f77e0599227d935bfee2d2fb2476181b369993e46c89ddf38e0d7aa620737d",
+      "initial_source_sha256": "97ab2617199f77248fbc0c868e15fa6425de0dc7bf523a65faf5f205ec9efb24",
+      "changed_since_initial_source": true
     }
   ],
   "source_revision_note": "EL2 source-only preparation; private v38 hashes retained"

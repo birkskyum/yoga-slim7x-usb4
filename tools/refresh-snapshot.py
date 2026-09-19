@@ -74,8 +74,13 @@ def main():
     for item in record['files']:
         digest = sha((ROOT / item['path']).read_bytes())
         if 'public_sha256' in item and digest != item['public_sha256']:
-            item.setdefault('v38_export_sha256', item['public_sha256'])
-            item['changed_since_v38_export'] = True
+            if item.get('private_source_sha256') is None:
+                # Newly authored files were not part of the v38 export.
+                item.setdefault('initial_source_sha256', item['public_sha256'])
+                item['changed_since_initial_source'] = True
+            else:
+                item.setdefault('v38_export_sha256', item['public_sha256'])
+                item['changed_since_v38_export'] = True
         item['public_sha256'] = digest
     record['source_revision_note'] = 'EL2 source-only preparation; private v38 hashes retained'
     (ROOT / PATCH).write_bytes(patch)

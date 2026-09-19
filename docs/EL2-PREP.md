@@ -6,6 +6,64 @@ remains EL1-only. The public SSD identity remains zero and rejects admission.
 No SanDisk write, Yoga boot, hardware MMIO or new storage read was performed
 for this preparation.
 
+## Earlier EL2 boot is already proven; ADSP handoff is not
+
+The owner's 14 September 2026 KVM test records establish two successful
+physical cold boots on this Yoga, BIOS NHCN62WW. Linux reported all CPUs
+starting at EL2 and KVM VHE initialized. On each boot, one-vCPU and two-vCPU
+Linux guests passed arithmetic and timer checks and shut down. This was
+kernel 7.2.4, not this branch's 7.3-rc2 USB4 kernel. The retained evidence is
+photographs and targeted owner-run log checks, not complete exported logs.
+
+The working boot used Nikita Travkin's
+[SLBounce at c090a8cdafa2](https://github.com/TravMurav/slbounce/tree/c090a8cdafa25e4c99df90f8d6f73f3805d9b397),
+the locally retained `tcblaunch.exe` 10.0.26100.1742, and Jens Glathe's
+[non-PAS overlay split at ce20a20db795](https://github.com/jglathe/linux_ms_dev_kit/commit/ce20a20db795f299983f092fb899e0ad1c005be3).
+The local image has SHA256
+`245e39ad26f327015ceb93f54ee6e7a615b6cb195a75ac78b35ef02a62a6f0ce`;
+its source-built non-PAS DTB has SHA256
+`76c4d6a31d978da218cd94d39e0492f4767dfaeab92a6609ea06b63a16f816ba`.
+Those two artifacts and the retained boot assets were rehashed during this
+review. SLBounce is
+`cc1b62e8bafeac98b80c99397405f3290af965801a4df0d2416ef120a2fbf6bd`;
+the launch payload is
+`5dfcd0253b6ee99499ab33cac221e8a9cea47f3fdf6d4e11de9a9f3c4770d03d`.
+No launch binary, boot image or private photo is distributed here.
+
+The preceding PAS-mapped boot faulted on apps SMMU 0x15000000 with SID
+0x1000, FSR 0x402 and IOVA 0x86b020c0. The successful comparison removed only
+the ADSP/CDSP top-level `iommus` properties; neither SMMU was disabled.
+That agrees with the
+[published firmware-handoff explanation](https://www.spinics.net/lists/kernel/msg6126299.html).
+It does not independently establish all of this BIOS's PAS capabilities.
+
+**Correction to the first version of this branch:** it copied the ADSP PAS
+mapping from the pinned baseline without incorporating that prior hardware
+result. The candidate now omits both DSP mappings. The DT checker requires
+their absence in the base and composed trees and rejects PAS-mapped inputs.
+Simply omitting a property from an overlay does not remove it from an input
+DTB. Do not compose this supplement on top of the baseline's PAS EL2 overlay.
+
+This removes a known boot regression, not the remaining USB4 prerequisite.
+The successful KVM initramfs omitted remoteproc modules and did not test full
+ADSP or PMIC GLINK. The v38 `probe-usb4` instead explicitly loads
+`qcom_q6v5_pas` and waits for PMIC logging, Type-C and UCSI services. Its
+EL1 startup must not be reused at EL2 without reviewing a non-PAS handoff.
+Preloading full ADSP in UEFI (for example with
+[qebspil](https://github.com/stephan-gh/qebspil)) would be a new,
+separately reviewed step, not something the earlier KVM test already proved.
+That project's documented X1E path also needs matching Linux takeover
+patches. The current reconstructed `qcom_q6v5_pas.c` checks PAS availability
+before probe, and its X1E ADSP descriptor does not set `early_boot`; merely
+preloading a firmware binary or enabling the generic attach callback is not
+a reviewed handoff implementation. Do not turn on an unconditional DSP start
+or fabricate PAS support to get past those checks.
+
+The existing SLBounce source checks that the final DT has the GPU zap shader
+disabled before doing its ExitBootServices transition. The candidate retains
+that property. A source match is not a new boot result, and loading the EFI
+driver alone does not establish that Linux has actually entered EL2.
+
 ## Why test a different boot environment?
 
 The pinned baseline's `arch/arm64/boot/dts/qcom/hamoa.dtsi` routes pcie4 and
@@ -104,8 +162,9 @@ This audit does not establish PCI0's MSI parent IRQ. No such IRQ is guessed.
   physical address. Logs distinguish the cached and resolved addresses.
   This checks Linux's mapping; it does not establish real device delivery.
 - `yoga-pci0-el2.dtso` is a supplement to `yoga-mcu.dtso`, not its replacement.
-  It takes the watchdog swap, GPU zap/IRIS disabling and ADSP IOMMU mapping
-  from the pinned EL2 overlay. Unused CDSP and PCIe hosts stay disabled.
+  It takes the watchdog swap and GPU zap/IRIS disabling from the pinned EL2
+  overlay, but follows Jens's non-PAS DSP policy validated by the earlier
+  Yoga boot: no ADSP/CDSP top-level IOMMU mapping. Unused CDSP and PCIe hosts stay disabled.
   PCI0 uses the calibrated SID base 0, without changing its MSI DeviceID.
 
 There is no register-sequence change, identity widening, synthetic interrupt,
@@ -134,10 +193,13 @@ EL1 boot entry. Compiling a kernel is not constructing or approving a boot kit.
 
 ## Still required before a hardware attempt
 
-1. Review the actual EL2-capable loader and final DT/command line. A marker
-   or Kconfig option cannot remove Gunyah. **Do not boot this overlay at EL1:**
+1. Reuse and verify the earlier successful SLBounce boot assets, but review
+   the final USB4 DT/command line and full ADSP/PMIC handoff separately. A
+   marker or Kconfig option cannot remove Gunyah. **Do not boot this overlay at EL1:**
    SMMUv3 can probe before PCI0's guard executes. Audit ADSP/PMIC startup and
    required modules/firmware in that boot environment, not just the DT.
+   First validate a bounded no-peripheral boot/service checkpoint; do not
+   bundle an unvalidated DSP handoff and a LaCie MSI-X attempt into one boot.
 2. Obtain the current-machine IORT or explicitly review the remaining
    same-model mapping assumption against the current BIOS. Do not guess IDs.
 3. On a separate, ordinary EL1 boot with the normal internal-SSD DT, capture

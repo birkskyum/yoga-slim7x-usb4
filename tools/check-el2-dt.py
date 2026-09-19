@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: GPL-2.0-only
 """Compile/compose candidate DTs in a temporary directory, never install them.
 
-Requires a reconstructed pinned kernel, a C preprocessor, dtc, fdtoverlay and
-fdtget. Checks the actual composed DT, not a regex over the overlay sources.
+Requires a reconstructed pinned kernel, a C preprocessor, dtc, fdtoverlay,
+fdtget and fdtput. Checks the composed DT, not a regex over overlay sources.
 This is source validation only: it cannot check firmware or CPU boot level.
 """
 import argparse
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
@@ -25,6 +26,14 @@ def get(tree, node, prop, kind='s'):
 
 def cells(tree, node, prop):
     return [int(word, 16) for word in get(tree, node, prop, 'x').split()]
+
+
+def check_non_pas(tree):
+    """Reject the DSP mapping that faulted on this Yoga's earlier EL2 boot."""
+    for label in ('remoteproc_adsp', 'remoteproc_cdsp'):
+        node = get(tree, '/__symbols__', label)
+        if 'iommus' in run('fdtget', '-p', tree, node).decode().split():
+            raise ValueError(f'{label}: PAS iommus present; not the tested non-PAS policy')
 
 
 def main():
@@ -71,13 +80,29 @@ def main():
                       'gpu_zap_shader', 'iris', 'sbsa_watchdog'):
             assert get(el2, get(el2, '/__symbols__', label), 'status') == 'disabled'
         assert get(el2, get(el2, '/__symbols__', 'apss_watchdog'), 'status') == 'okay'
+        for tree in (trees[0], el1, el2):
+            check_non_pas(tree)
+        # An accidental PAS overlay/input must fail even for disabled CDSP.
         apps = get(el2, '/__symbols__', 'apps_smmu')
-        assert cells(el2, get(el2, '/__symbols__', 'remoteproc_adsp'), 'iommus') == [
-            cells(el2, apps, 'phandle')[0], 0x1000, 0x80]
+        apps_handle = cells(el2, apps, 'phandle')[0]
+        for label, sid, mask in (('remoteproc_adsp', 0x1000, 0x80),
+                                 ('remoteproc_cdsp', 0xc00, 0)):
+            bad_input, bad_result = work / 'pas-input.dtb', work / 'pas-result.dtb'
+            shutil.copyfile(el1, bad_input)
+            node = get(el2, '/__symbols__', label)
+            run('fdtput', '-t', 'x', bad_input, node, 'iommus',
+                f'{apps_handle:x}', f'{sid:x}', f'{mask:x}')
+            run('fdtoverlay', '-i', bad_input, '-o', bad_result, trees[2])
+            try:
+                check_non_pas(bad_result)
+            except ValueError as error:
+                assert str(error).startswith(label + ':')
+            else:
+                raise AssertionError(f'PAS input escaped validation: {label}')
         # Each DT INTx cell triplet is an SPI number, not an MSI parent IRQ.
         irqs = cells(el2, pci, 'interrupt-map')
         assert [irqs[i + 8] for i in range(0, len(irqs), 10)] == [703, 708, 714, 716]
-    print('PASS composed EL1/EL2 DTs: exact maps, disabled PCIe hosts, watchdogs, ADSP, INTx provenance. No boot image retained or installed.')
+    print('PASS composed EL1/EL2 DTs: exact maps, disabled PCIe hosts, watchdogs, non-PAS DSP policy and two PAS-input rejection tests, INTx provenance. No boot image retained or installed.')
 
 
 if __name__ == '__main__':

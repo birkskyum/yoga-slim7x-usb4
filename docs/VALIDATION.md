@@ -56,7 +56,8 @@ SanDisk write:
   calibration at RID 0, 0x100 and 0xffff. It is not a current-machine dump.
 - The actual Yoga DT and both overlays compile and compose. Inspection of
   the merged trees confirms the EL1/EL2 markers, exact SID/MSI maps, disabled
-  PCIe hosts, watchdog changes, ADSP mapping and existing INTx numbers.
+  PCIe hosts, watchdog changes and existing INTx numbers. The initial check
+  included an ADSP PAS mapping; the corrected non-PAS check is recorded below.
   Existing base/runtime-overlay dtc warnings remain; this is not a DT binding
   schema validation claim.
 - The changed PCI0 driver, ITS driver and NVMe PCI translation units compile
@@ -69,3 +70,27 @@ unrelated subsystems in the broad saved configuration. They are **not**
 reported as successful full builds. The targeted compilation above completed.
 No candidate was packaged as a boot image, installed or hardware-tested.
 Mocks cannot validate Gunyah, physical SIDs, MSI delivery or EL2 boot safety.
+
+## Prior EL2 evidence and non-PAS correction
+
+The earlier local 14 September KVM test record establishes that this Yoga
+already booted at EL2 and ran one-/two-vCPU Linux guests on two cold boots.
+It used a non-PAS DSP tree and omitted remoteproc modules; it is not a USB4
+result. The retained image, non-PAS DTB and SLBounce/launch-payload hashes
+were rechecked against that record. See [details and attribution](EL2-PREP.md).
+
+After removing the candidate's ADSP PAS mapping:
+
+- Source hashes and the unchanged 52-file kernel aggregate roundtrip pass.
+- All sixteen C mock executions and four synthetic IORT tests pass again on
+  arm64 macOS. No kernel C code changed in this correction.
+- The actual pinned Yoga base, v38 overlay and corrected EL2 supplement
+  compile/compose. The checker requires no top-level ADSP/CDSP `iommus`
+  in all three trees. Two negative tests add each PAS mapping to the input,
+  compose the actual supplement and verify that the unsafe result is rejected.
+- The existing dtc warnings remain. No new full kernel build, boot-image
+  packaging, SanDisk write, firmware start or hardware boot was performed.
+
+The earlier KVM result resolves whether EL2 entry has ever worked on this
+machine. The remaining firmware-service handoff must be reviewed before
+the EL1 `probe-usb4` workflow can be adapted to EL2.
