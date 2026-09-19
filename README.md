@@ -21,6 +21,7 @@ not included. See [publication changes](docs/PROVENANCE.md).
 ## Start here
 
 - [Results and unresolved MSI-X route](docs/RESULTS.md)
+- [Separate EL2 source-only candidate and evidence audit](docs/EL2-PREP.md)
 - [Reconstruct and build](docs/REPRODUCE.md)
 - [Authorship and publication changes](docs/PROVENANCE.md)
 - [Safety and contribution rules](CONTRIBUTING.md)
@@ -31,6 +32,10 @@ against Jim Martin's pinned Glymur reconstruction, not vanilla Linux.
 `snapshot/module/` contains the startup frontend and helpers.
 `snapshot/runtime/` preserves the RAM-only shell workflow as reference source,
 not a turnkey boot image. `tests/` contains offline C mocks.
+
+The `el2-source-prep` branch extends that checkpoint with an opt-in EL2
+candidate. The aggregate and snapshot remain equivalent. Neither the default
+EL1 build nor this candidate has a public hardware-boot result.
 
 Run the firmware-free checks with Python 3.12+, Git and a C compiler with
 ASan/UBSan:

@@ -65,3 +65,11 @@ a redistribution license or proof that an arbitrary board is compatible.
 
 There is no supported public image, automatic flashing command or install
 procedure. Do not repurpose the old SanDisk-specific helper for another disk.
+
+## Separate EL2 preparation
+
+See [EL2-PREP.md](EL2-PREP.md) before using the optional configuration fragment
+or supplemental overlay. The build command above retains the default EL1
+policy. The EL2 branch is source-only and requires separate output directories,
+boot-chain review and hardware approval; the fragment does not create an
+EL2-capable loader or admit a storage device.

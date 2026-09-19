@@ -52,7 +52,8 @@ void x1_its_msi_audit(struct pci_dev *pdev, unsigned int irq, bool timeout)
 	if (!node_ok)
 		return;
 	get_cached_msi_msg(irq, &msg);
-	if (msg.address_hi || msg.address_lo != 0x17050040 || msg.data != event)
+	if (msg.data != event ||
+	    !x1_native_msi_address(pdev, msg.address_lo, msg.address_hi))
 		return;
 	/* At most setup + first timeout for each of the two events per boot.
 	 * Do not repeat q0 setup when the existing NVMe flow reallocates IRQs. */

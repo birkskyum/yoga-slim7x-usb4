@@ -15,6 +15,10 @@ blocks, disabled internal SSD/Wi-Fi, reserved PCIe SMMU ownership and cold-off
 requirements. Do not widen a device allowlist to make a test pass. The public
 snapshot intentionally has no admitted SSD identity.
 
+The separately selected [EL2 source candidate](docs/EL2-PREP.md) deliberately
+requires Linux-owned PCIe SMMU DMA domains instead of reserved ownership.
+Preserve both sets of guards; do not make the default EL1 route accept EL2.
+
 RAM-only boot is not a guarantee of DMA isolation. Initialization writes to
 controller registers and runs separately supplied firmware; MMIO can hang.
 No automatic retry, firmware flashing, EL2 takeover or guessed MSI routing.

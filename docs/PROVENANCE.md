@@ -41,3 +41,23 @@ The sequence is hardware-specific and is not a supported Qualcomm interface.
 
 The hardware-tested private image remains unchanged. The public snapshot is a
 distinct derivative, not a claim of bit-for-bit reproduction of that image.
+
+## EL2 source-only derivative
+
+The `el2-source-prep` branch adds an opt-in environment/DMA-domain guard,
+IOVA-aware MSI address checks, supplemental DT/config sources, evidence audit
+and offline tests. [EL2-PREP.md](EL2-PREP.md) records the source attribution,
+IORT calibration and limits. No EL2 USB4 hardware result is claimed.
+
+`provenance/export.json` retains every original `private_source_sha256`.
+For modified exports it additionally retains `v38_export_sha256` and marks
+`changed_since_v38_export`. Newly authored snapshot files have no private
+source hash. The current `public_sha256` covers the browsable derivative.
+The original `changed_for_publication` flag continues to describe the initial
+export, not later development.
+
+`tools/refresh-snapshot.py` mechanically derives the aggregate from reviewed
+snapshot edits, reversing HEAD's patch and requiring the independently pinned
+pre-change hashes first. New snapshot paths must be explicitly listed. It
+never changes the 93 baseline fingerprints. Its output still needs review
+and `tools/review.py check`; it is not a way to bless an arbitrary baseline.

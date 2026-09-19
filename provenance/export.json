@@ -36,8 +36,10 @@
     {
       "path": "snapshot/kernel/drivers/nvme/host/x1-nvme-irq.h",
       "private_source_sha256": "08601517776cefa3b56d2979df88e9cd619f808cae8deccb41c0ce2d29ef4353",
-      "public_sha256": "08601517776cefa3b56d2979df88e9cd619f808cae8deccb41c0ce2d29ef4353",
-      "changed_for_publication": false
+      "public_sha256": "96d7452b968e1397f9117c0e1f60ebbdcdcafdc1993495167cc8cfd104fe8f20",
+      "changed_for_publication": false,
+      "v38_export_sha256": "08601517776cefa3b56d2979df88e9cd619f808cae8deccb41c0ce2d29ef4353",
+      "changed_since_v38_export": true
     },
     {
       "path": "snapshot/kernel/drivers/nvme/host/x1-nvme-trace.h",
@@ -48,8 +50,10 @@
     {
       "path": "snapshot/kernel/drivers/irqchip/irq-gic-v3-its-x1-audit.h",
       "private_source_sha256": "38c3fd577cb9795573a84110601f871ebb4340dc8b955729aa9d1d88283345bb",
-      "public_sha256": "38c3fd577cb9795573a84110601f871ebb4340dc8b955729aa9d1d88283345bb",
-      "changed_for_publication": false
+      "public_sha256": "3806f0499100618834ab7af68d2017c25687fd38234c883c4ea6e97c240fe24e",
+      "changed_for_publication": false,
+      "v38_export_sha256": "38c3fd577cb9795573a84110601f871ebb4340dc8b955729aa9d1d88283345bb",
+      "changed_since_v38_export": true
     },
     {
       "path": "snapshot/kernel/drivers/irqchip/irq-gic-v3-its.c",
@@ -120,8 +124,10 @@
     {
       "path": "snapshot/kernel/drivers/thunderbolt/Kconfig",
       "private_source_sha256": "8c9a54feb158d5f82915cea7ab8e86b6041fcb7b017f80593104468ea0a9ff25",
-      "public_sha256": "8c9a54feb158d5f82915cea7ab8e86b6041fcb7b017f80593104468ea0a9ff25",
-      "changed_for_publication": false
+      "public_sha256": "2d865c08c7c2d9122a5b74a9baf95ed2d7be765d0b402ed9e67933943fa530ff",
+      "changed_for_publication": false,
+      "v38_export_sha256": "8c9a54feb158d5f82915cea7ab8e86b6041fcb7b017f80593104468ea0a9ff25",
+      "changed_since_v38_export": true
     },
     {
       "path": "snapshot/kernel/drivers/thunderbolt/Makefile",
@@ -162,8 +168,10 @@
     {
       "path": "snapshot/kernel/drivers/thunderbolt/qcom-x1-pcie.c",
       "private_source_sha256": "cdd2281ad2c4fcda4e6e36d1c0e0ace4312af25a7e8c0c9891d8683db2f92ec3",
-      "public_sha256": "cdd2281ad2c4fcda4e6e36d1c0e0ace4312af25a7e8c0c9891d8683db2f92ec3",
-      "changed_for_publication": false
+      "public_sha256": "49ecdd73d6f7e9c9a6ae996e121f77d640d4eb89d915dab22f9b87c58a9fd869",
+      "changed_for_publication": false,
+      "v38_export_sha256": "cdd2281ad2c4fcda4e6e36d1c0e0ace4312af25a7e8c0c9891d8683db2f92ec3",
+      "changed_since_v38_export": true
     },
     {
       "path": "snapshot/kernel/drivers/thunderbolt/retimer.c",
@@ -306,8 +314,10 @@
     {
       "path": "snapshot/kernel/include/linux/soc/qcom/x1-usb4-diag.h",
       "private_source_sha256": "236e9c33ce468cbb14ff36abb1a7f55278ac16439437d2d0fe81c25b111de206",
-      "public_sha256": "236e9c33ce468cbb14ff36abb1a7f55278ac16439437d2d0fe81c25b111de206",
-      "changed_for_publication": false
+      "public_sha256": "ed4fe38fae9563773487a6537c68f96bd29175552a90794f1f71251f17b1ff1e",
+      "changed_for_publication": false,
+      "v38_export_sha256": "236e9c33ce468cbb14ff36abb1a7f55278ac16439437d2d0fe81c25b111de206",
+      "changed_since_v38_export": true
     },
     {
       "path": "snapshot/module/Makefile",
@@ -504,8 +514,10 @@
     {
       "path": "tests/test_its.c",
       "private_source_sha256": "9dbbdd9f89d0e9295a6046cbbcb33f4e6b8273d2f210cd06b54a4960eea3c6ff",
-      "public_sha256": "9dbbdd9f89d0e9295a6046cbbcb33f4e6b8273d2f210cd06b54a4960eea3c6ff",
-      "changed_for_publication": false
+      "public_sha256": "64893c88e43629335e3b122d31b54f07175869036cd286b64e18db50f2433c59",
+      "changed_for_publication": false,
+      "v38_export_sha256": "9dbbdd9f89d0e9295a6046cbbcb33f4e6b8273d2f210cd06b54a4960eea3c6ff",
+      "changed_since_v38_export": true
     },
     {
       "path": "tests/test_pci0_init.c",
@@ -516,8 +528,25 @@
     {
       "path": "tests/test_nvme_irq_v33.c",
       "private_source_sha256": "9ca424633c4d7544dd8bd980b8c061c57ef8cabeff24706f377600fa479c58fa",
-      "public_sha256": "9ca424633c4d7544dd8bd980b8c061c57ef8cabeff24706f377600fa479c58fa",
-      "changed_for_publication": false
+      "public_sha256": "7f250f023f61dddb7b5818b7b32507000c16c590eb1da2d22234dd8a64a23c3d",
+      "changed_for_publication": false,
+      "v38_export_sha256": "9ca424633c4d7544dd8bd980b8c061c57ef8cabeff24706f377600fa479c58fa",
+      "changed_since_v38_export": true
+    },
+    {
+      "path": "snapshot/kernel/drivers/thunderbolt/x1-pcie-environment.h",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "1e289aff20942305aed66d89798fa724964b6f54ed93023e4fc7ed92e008f740"
+    },
+    {
+      "path": "snapshot/runtime/yoga-pci0-el2.dtso",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "97ab2617199f77248fbc0c868e15fa6425de0dc7bf523a65faf5f205ec9efb24"
     }
-  ]
+  ],
+  "source_revision_note": "EL2 source-only preparation; private v38 hashes retained"
 }

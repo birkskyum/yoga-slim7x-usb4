@@ -66,7 +66,9 @@ bool x1_diag_nhi_complete(void);
 struct pci_dev;
 #if IS_ENABLED(CONFIG_USB4_X1_NATIVE)
 bool x1_native_nvme_allowed(struct pci_dev *pdev);
+bool x1_native_msi_address(struct pci_dev *pdev, u32 lo, u32 hi);
 #else
 static inline bool x1_native_nvme_allowed(struct pci_dev *pdev) { return false; }
+static inline bool x1_native_msi_address(struct pci_dev *pdev, u32 lo, u32 hi) { return false; }
 #endif
 #endif

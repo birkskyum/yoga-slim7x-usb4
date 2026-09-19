@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* SOURCE-ONLY CANDIDATE, NOT A BOOTABLE IMAGE.
+ * Apply after yoga-mcu.dtso, only with an independently verified EL2 loader.
+ * Adapted from the pinned baseline's qcom/x1-el2.dtso (Nikita Travkin et al.).
+ * Never apply to a Gunyah/EL1 boot: SMMUv3 probes before PCI0's own guards.
+ * See docs/EL2-PREP.md for evidence, limitations and required pre-boot checks.
+ */
+/dts-v1/;
+/plugin/;
+
+&{/} { birk,usb4-pci0-el2-test; };
+&apss_watchdog { status = "okay"; };
+&sbsa_watchdog { status = "disabled"; };
+&gpu_zap_shader { status = "disabled"; };
+&iris { status = "disabled"; };
+&remoteproc_adsp { iommus = <&apps_smmu 0x1000 0x80>; };
+&remoteproc_cdsp { status = "disabled"; };
+
+/* Do not enable or probe the internal SSD, Wi-Fi or other PCIe hosts. */
+&pcie3 { status = "disabled"; };
+&pcie4 { status = "disabled"; };
+&pcie5 { status = "disabled"; };
+&pcie6a { status = "disabled"; };
+&pcie_smmu { status = "okay"; };
+
+&{/soc@0/pcie-usb4-test@400000000} {
+	/* Same-model PUBLIC IORT, not this machine's current BIOS capture.
+	 * PCI0 RID 0..ffff -> SMMUv3 SID 0..ffff -> ITS ID 80000..8ffff.
+	 */
+	iommu-map = <0 &pcie_smmu 0x0 0x10000>;
+	msi-map = <0 &gic_its 0x80000 0x10000>;
+};

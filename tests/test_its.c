@@ -75,9 +75,11 @@ static u64 readq_relaxed(void *p)
     if(reads==hang_at)longjmp(interrupted,1);
     return record_value;
 }
+#include "x1_address_mock.h"
 #include "kernel/drivers/irqchip/irq-gic-v3-its-x1-audit.h"
 static void reset(unsigned int event)
 {
+    address_reset();
     assert(!node.refs);event_id=event;puts_count=0;
     endpoint=(struct pci_dev){.msix_enabled=true};admitted=true;
     no_irq=no_desc=no_node=false;hang_at=reads=0;
@@ -94,6 +96,16 @@ static void reset(unsigned int event)
 static void audit(bool timeout) { x1_its_msi_audit(&endpoint,144+event_id,timeout);assert(!node.refs); }
 int main(void)
 {
+    reset(1);mock_el2=mock_domain_present=true;cached.address_lo=mock_iova;
+    audit(false);assert(reads==3 && mock_translations==2);
+    reset(1);mock_el2=mock_domain_present=true;mock_iova=0x112345040ULL;
+    cached.address_lo=(u32)mock_iova;cached.address_hi=mock_iova>>32;
+    audit(false);assert(reads==3 && mock_translations==2);
+    reset(1);mock_el2=true;audit(false);assert(!reads && !mock_translations);
+    reset(1);mock_el2=mock_domain_present=true;mock_physical=0;
+    cached.address_lo=mock_iova;audit(false);assert(!reads);
+    reset(1);mock_el2=mock_domain_present=true;mock_tail_missing=true;
+    cached.address_lo=mock_iova;audit(false);assert(!reads);
     reset(0);controller.typer=0;audit(false);assert(!reads && strstr(logbuf,"unmapped-report-unsupported"));
     reset(0);controller.typer=BIT_ULL(45);audit(false);assert(!reads && strstr(logbuf,"umsi_cap=0"));
     reset(0);statuses[0]=0;audit(false);assert(reads==1 && strstr(logbuf,"latched=0"));

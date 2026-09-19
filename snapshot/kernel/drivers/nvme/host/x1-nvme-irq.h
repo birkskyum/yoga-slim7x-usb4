@@ -57,7 +57,7 @@ static void x1_nvme_irq_snapshot(struct pci_dev *pdev, unsigned int qid,
 	void __iomem *entry;
 	u32 translated, lo, hi, data, mask, table = 0, pba = 0;
 	u16 ctrl = 0;
-	bool node_ok, route_ok, its_chip = false;
+	bool node_ok, address_ok, route_ok, its_chip = false;
 	int irq, ret, pos, depth;
 
 	if (!x1_nvme_irq_test(pdev))
@@ -80,9 +80,9 @@ static void x1_nvme_irq_snapshot(struct pci_dev *pdev, unsigned int qid,
 	get_cached_msi_msg(irq, &msg);
 	translated = of_msi_xlate(&pdev->dev, &np, pci_dev_id(pdev));
 	node_ok = x1_nvme_irq_controller(np);
+	address_ok = x1_native_msi_address(pdev, msg.address_lo, msg.address_hi);
 	route_ok = node_ok &&
-		translated == 0x80100 && msg.address_hi == 0 &&
-		msg.address_lo == 0x17050040 && msg.data == vector;
+		translated == 0x80100 && address_ok && msg.data == vector;
 	dev_emerg(&pdev->dev, "V33 IRQ ROUTE irq=%d rid=%04x dt_id=%08x controller=%pOF cached=%08x:%08x data=%08x\n",
 		  irq, pci_dev_id(pdev), translated, np,
 		  msg.address_hi, msg.address_lo, msg.data);
@@ -123,7 +123,7 @@ static void x1_nvme_irq_snapshot(struct pci_dev *pdev, unsigned int qid,
 		  hi == msg.address_hi && lo == msg.address_lo && data == msg.data);
 	dev_emerg(&pdev->dev, "V33 IRQ GUARD qid=%u node=%u devid=%u address=%u event=%u its=%u queue=%u index=%u function_unmasked=%u vector_unmasked=%u cache=%u\n",
 		  qid, node_ok, translated == 0x80100,
-		  msg.address_hi == 0 && msg.address_lo == 0x17050040,
+		  address_ok,
 		  msg.data == vector, its_chip, qid == vector, desc->msi_index == vector,
 		  !(ctrl & PCI_MSIX_FLAGS_MASKALL), !(mask & PCI_MSIX_ENTRY_CTRL_MASKBIT),
 		  hi == msg.address_hi && lo == msg.address_lo && data == msg.data);

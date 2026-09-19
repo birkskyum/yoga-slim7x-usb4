@@ -9,6 +9,7 @@
 #include <setjmp.h>
 #include "kernel/include/uapi/linux/pci_regs.h"
 typedef uint32_t u32;
+typedef uint64_t u64;
 typedef uint16_t u16;
 typedef uint8_t u8;
 #define IS_ENABLED(c) (c)
@@ -39,6 +40,7 @@ struct msi_desc { struct device *dev; unsigned int msi_index;
 struct irq_domain { const char *name; };
 struct irq_data { struct irq_domain *domain; unsigned long hwirq; struct irq_data *parent_data; };
 static struct pci_dev endpoint, root;
+#include "x1_address_mock.h"
 static struct pci_bus bus;
 static struct device wrongdev;
 static struct device_node controller, decoy;
@@ -137,6 +139,7 @@ static int operation(int ret) { ops++;return ret; }
 static unsigned int arg(void) { arg_ops++;return 0; }
 static void reset(void)
 {
+    address_reset();
     endpoint=(struct pci_dev){.msix_enabled=true,.msix_cap=0x80,.aer_cap=0x100,.bus=&bus,.rid=0x100};
     root=(struct pci_dev){.aer_cap=0x100,.bus=&bus,.vendor=0x17cb,.device=0x0111,.type=PCI_EXP_TYPE_ROOT_PORT};
     bus.domain=0;admitted=true;
@@ -167,6 +170,12 @@ int main(void)
     if(!IS_ENABLED(CONFIG_USB4_X1_NATIVE)) { assert(!loglen && !config_reads && !mmio_reads && !lock_calls);puts("PASS MSI-X production policy: disabled configuration untouched.");return 0; }
     reset();x1_nvme_irq_snapshot(&endpoint,1,1,0);assert(config_reads==3 && mmio_reads==4 && node_puts==2);
     assert(strstr(logbuf,"node=1 devid=1 address=1 event=1 its=1 queue=1 index=1 function_unmasked=1 vector_unmasked=1 cache=1"));assert(!strstr(logbuf,"SOFTINT"));
+    reset();mock_el2=mock_domain_present=true;mock_iova=0x112345040ULL;
+    cached.address_lo=entries[4]=(u32)mock_iova;cached.address_hi=entries[5]=mock_iova>>32;
+    x1_nvme_irq_snapshot(&endpoint,1,1,0);
+    assert(strstr(logbuf,"address=1") && strstr(logbuf,"route=1") && mock_translations==2);
+    reset();mock_el2=true;x1_nvme_irq_snapshot(&endpoint,1,1,0);
+    assert(strstr(logbuf,"address=0") && strstr(logbuf,"route=0") && !mock_translations);
     reset();state();assert(map_calls==1 && unmaps==1 && !maps_live && mmio_reads==5 && root_reads==8);assert(strstr(logbuf,"pending=0 valid=1") && strstr(logbuf,"role=endpoint") && strstr(logbuf,"role=root"));
     reset();control|=PCI_MSIX_FLAGS_MASKALL;entries[7]=1;pba_bits=2;state();assert(strstr(logbuf,"ctrl=c020") && strstr(logbuf,"mask=00000001") && strstr(logbuf,"pending=1 valid=1"));
     reset();pba_bits=0xffffffff;state();assert(strstr(logbuf,"valid=0"));reset();entries[6]=99;state();assert(strstr(logbuf,"cache_match=0"));

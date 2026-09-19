@@ -50,7 +50,8 @@
     "drivers/clk/qcom/gcc-x1e80100.c": "fbb317aff7b28bd6119433fd806c09c8dc37f9991a29aa0e8fb41825fa231ffe",
     "drivers/clk/qcom/x1-usb4-diag.inc": null,
     "include/linux/irqchip/arm-gic-v3-x1-audit.h": null,
-    "include/linux/soc/qcom/x1-usb4-diag.h": null
+    "include/linux/soc/qcom/x1-usb4-diag.h": null,
+    "drivers/thunderbolt/x1-pcie-environment.h": null
   },
   "after": {
     "drivers/nvme/host/core.c": "7aefd75023f00831aea88d730da57eb0ab34bee3764b4b9dbebbc7b323090a72",
@@ -58,9 +59,9 @@
     "drivers/nvme/host/pci.c": "c5c710a631a0cd0b30f7149e9c2566adfeee48610e0e14195c8bc9c9917082b5",
     "drivers/nvme/host/x1-nvme-irq-evidence.h": "e297d2aafc547833da58635327f175222ed8f626ff20c858d7eff95d8a2a16a6",
     "drivers/nvme/host/x1-nvme-irq-timeout.h": "1b80b23dbc9b3999bbb514fbb217663a661e13d9aadf452db6979065c3b08883",
-    "drivers/nvme/host/x1-nvme-irq.h": "08601517776cefa3b56d2979df88e9cd619f808cae8deccb41c0ce2d29ef4353",
+    "drivers/nvme/host/x1-nvme-irq.h": "96d7452b968e1397f9117c0e1f60ebbdcdcafdc1993495167cc8cfd104fe8f20",
     "drivers/nvme/host/x1-nvme-trace.h": "1755d3aab1a10c75251c34ab9ff6a299ae7ee91788ac68626555d077df4060fb",
-    "drivers/irqchip/irq-gic-v3-its-x1-audit.h": "38c3fd577cb9795573a84110601f871ebb4340dc8b955729aa9d1d88283345bb",
+    "drivers/irqchip/irq-gic-v3-its-x1-audit.h": "3806f0499100618834ab7af68d2017c25687fd38234c883c4ea6e97c240fe24e",
     "drivers/irqchip/irq-gic-v3-its.c": "7bb902665264253f1f071ad629fc3e11d59f6afdc0a039a1f2f501d712e6846f",
     "drivers/soc/qcom/Makefile": "7656bf540bb8500dca1b57b7da3a0c57d4aa9243902a4205e54f6027f4db27f4",
     "drivers/soc/qcom/yoga_link_plan.h": "6d2d70aaada892ad35063c3d5af918113fc47404a358afff2a1435f49dc4ce7c",
@@ -72,14 +73,14 @@
     "drivers/soc/qcom/yoga_ucsi_packet.h": "cad62435f33ee97ff2e09404378bcd36c8fb07cbe7b57135dd04438bcdd69296",
     "drivers/soc/qcom/yoga_ucsi_query.h": "8b9e011a62873a7e4639a2e5fd1565fa43bc52673bdf95e5912292911ff9aacd",
     "drivers/soc/qcom/yoga_ucsi_snapshot.c": "358f2a6d645fea210d0400dd9e44e735a7ca93d76347fc43cfd4a9670e024f7d",
-    "drivers/thunderbolt/Kconfig": "8c9a54feb158d5f82915cea7ab8e86b6041fcb7b017f80593104468ea0a9ff25",
+    "drivers/thunderbolt/Kconfig": "2d865c08c7c2d9122a5b74a9baf95ed2d7be765d0b402ed9e67933943fa530ff",
     "drivers/thunderbolt/Makefile": "6501731f08548f036e7280e0a04c3f418c8952129da82cd536f172fddc1da6d0",
     "drivers/thunderbolt/ctl.c": "f6dca31400a2407482d0c2a4376009f053106365bc3db60974a90a09066a860f",
     "drivers/thunderbolt/domain.c": "90c00cd743fd71d1a48538a858885cefbfeb0f923b226fcc80e6ce844466183a",
     "drivers/thunderbolt/pci.c": "4a0de9525e1ef6d13163a04c4ab05438b1c909949ad59df88241ed30e83c2c74",
     "drivers/thunderbolt/qcom-x1-native.c": "fd12a52186950b9b50142f38432771ed54b72296327cb31b84fb33d32142f181",
     "drivers/thunderbolt/qcom-x1-nhi-diag.c": "3b69c49551ac193f88446b18ad1c4654d00e7983bf00edfb9c2e74fd6ff5ca77",
-    "drivers/thunderbolt/qcom-x1-pcie.c": "cdd2281ad2c4fcda4e6e36d1c0e0ace4312af25a7e8c0c9891d8683db2f92ec3",
+    "drivers/thunderbolt/qcom-x1-pcie.c": "49ecdd73d6f7e9c9a6ae996e121f77d640d4eb89d915dab22f9b87c58a9fd869",
     "drivers/thunderbolt/retimer.c": "73adf5135dffa61112904ac8648ade4160936857da7b1ed17f38f2f0bc1cdb1a",
     "drivers/thunderbolt/switch.c": "b8cb077d34e528da1b0d85edefa3df695e5c33ca9dd2acb5c8e4fa136ac1e43d",
     "drivers/thunderbolt/tb.c": "f28e7ff3e5ae8b980b52dedf5e324aafbc90c01b59cf8e69616eff8901a2cd01",
@@ -103,6 +104,7 @@
     "drivers/clk/qcom/gcc-x1e80100.c": "fb6d9b3471eb45daf67e03f336d5dd06aa621c44af9617cef8896ecebf557fd2",
     "drivers/clk/qcom/x1-usb4-diag.inc": "c66341bc6813457cebf03be408667d986d8dd2ef32a2f474502c0043181ae569",
     "include/linux/irqchip/arm-gic-v3-x1-audit.h": "6bed9f11afa92a9a7bafc55ec3be9d78b62fd08a4898f282ac1c1f68db0e5370",
-    "include/linux/soc/qcom/x1-usb4-diag.h": "236e9c33ce468cbb14ff36abb1a7f55278ac16439437d2d0fe81c25b111de206"
+    "include/linux/soc/qcom/x1-usb4-diag.h": "ed4fe38fae9563773487a6537c68f96bd29175552a90794f1f71251f17b1ff1e",
+    "drivers/thunderbolt/x1-pcie-environment.h": "1e289aff20942305aed66d89798fa724964b6f54ed93023e4fc7ed92e008f740"
   }
 }

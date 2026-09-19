@@ -46,6 +46,16 @@ config USB4_X1_NATIVE
 	  LaCie. PCIe approval is conditional on its private Yoga PCI0 bridge.
 	  Experimental read-only storage candidate, not installation support.
 
+config USB4_X1_EL2_TEST
+	bool "Source-only Yoga X1 EL2 PCIe DMA-domain candidate"
+	depends on USB4_X1_NATIVE && ARM_SMMU_V3=y && IOMMU_DMA
+	default n
+	help
+	  Separately selected, unbooted experiment. Requires an EL2 boot, an
+	  explicit matching DT marker and Linux-owned PCIe SMMUv3 DMA domains.
+	  This does not change boot privilege, configure firmware or establish
+	  working MSI-X. The public external-device identity stays fail-closed.
+
 config USB4_CONFIGFS
 	def_tristate USB4
 	depends on CONFIGFS_FS && !(USB4=y && CONFIGFS_FS=m)

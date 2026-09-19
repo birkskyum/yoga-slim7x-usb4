@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /* Private Yoga PCI0 bring-up. Derived from this board's captured PEP D0 list.
  * Not a general Qualcomm PCIe driver. PCI0-only initialization/reset;
- * no PHY reset, EL2 or SMMU takeover. See PCIE-INIT-EVIDENCE.md.
+ * no PHY reset. EL1 is default; EL2 requires a separate build and DT opt-in.
  * Register only after the single-owner USB4 CM has identified the LaCie.
  * No storage driver is registered here. Failure state is retained until off.
  * v24 uses emergency console severity for private live checkpoints because
@@ -12,6 +12,7 @@
 #include <linux/delay.h>
 #include <linux/interconnect.h>
 #include <linux/io.h>
+#include <linux/iommu.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/pci.h>
@@ -25,6 +26,52 @@
 #include "x1-pcie.h"
 #include "x1-pcie-init.h"
 #include "x1-pcie-msi-audit.h"
+#include "x1-pcie-environment.h"
+
+static bool x1_pcie_exact_map(struct device_node *pci, const char *name,
+			    struct device_node *target, u32 base)
+{
+	u32 cells[4];
+
+	return pci && target && target->phandle &&
+		of_property_count_u32_elems(pci, name) == 4 &&
+		!of_property_read_u32_array(pci, name, cells, 4) &&
+		cells[0] == 0 && cells[1] == target->phandle &&
+		cells[2] == base && cells[3] == 0x10000;
+}
+
+/* Read DT only, before registering a driver or acquiring PCI0 resources.
+ * The DT enables SMMUv3 at kernel boot, so this is not a boot-chain guard.
+ * See docs/EL2-PREP.md before constructing any image from the candidate.
+ */
+static bool x1_pcie_environment_allowed(void)
+{
+	struct device_node *smmu, *pci, *its;
+	bool reserved, available, maps, others, allowed;
+
+	smmu = of_find_node_by_path("/soc@0/iommu@15400000");
+	pci = of_find_node_by_path("/soc@0/pcie-usb4-test@400000000");
+	its = of_find_node_by_path(
+		"/soc@0/interrupt-controller@17000000/msi-controller@17040000");
+	reserved = smmu && of_property_match_string(smmu, "status", "reserved") == 0;
+	available = smmu && of_device_is_available(smmu);
+	maps = x1_pcie_exact_map(pci, "iommu-map", smmu, 0) &&
+		x1_pcie_exact_map(pci, "msi-map", its, 0x80000) &&
+		!of_property_present(pci, "iommu-map-mask") &&
+		!of_property_present(pci, "msi-map-mask");
+	others = x1_diag_disabled("/soc@0/pcie@1bd0000") &&
+		x1_diag_disabled("/soc@0/pcie@1c00000") &&
+		x1_diag_disabled("/soc@0/pcie@1c08000") &&
+		x1_diag_disabled("/soc@0/pcie@1bf8000");
+	allowed = x1_pcie_boot_policy(IS_ENABLED(CONFIG_USB4_X1_EL2_TEST),
+		is_hyp_mode_available(),
+		of_property_read_bool(of_root, "birk,usb4-pci0-el2-test"),
+		reserved, available, maps, others);
+	of_node_put(its);
+	of_node_put(pci);
+	of_node_put(smmu);
+	return allowed;
+}
 
 struct x1_bridge {
 	struct platform_device *pdev;
@@ -224,9 +271,26 @@ bool x1_native_nvme_allowed(struct pci_dev *pdev)
 	 * Publish permission only after the entire bus inventory passes.
 	 */
 	struct x1_bridge *b = READ_ONCE(bridge_owner);
-	return b && smp_load_acquire(&b->endpoint_validated) && b->endpoint == pdev;
+	return b && smp_load_acquire(&b->endpoint_validated) && b->endpoint == pdev &&
+		(!IS_ENABLED(CONFIG_USB4_X1_EL2_TEST) || x1_pcie_dma_domain(&pdev->dev));
 }
 EXPORT_SYMBOL_GPL(x1_native_nvme_allowed);
+
+bool x1_native_msi_address(struct pci_dev *pdev, u32 lo, u32 hi)
+{
+	u64 address = ((u64)hi << 32) | lo, physical;
+	bool valid;
+
+	if (!x1_native_nvme_allowed(pdev))
+		return false;
+	valid = x1_pcie_msi_target(&pdev->dev, IS_ENABLED(CONFIG_USB4_X1_EL2_TEST),
+				 address, &physical);
+	dev_emerg(&pdev->dev, "EL2PREP MSI ADDRESS translated=%u cached=%016llx physical=%016llx valid=%u; mapping check, not delivery\n",
+		  IS_ENABLED(CONFIG_USB4_X1_EL2_TEST), (unsigned long long)address,
+		  (unsigned long long)physical, valid);
+	return valid;
+}
+EXPORT_SYMBOL_GPL(x1_native_msi_address);
 
 static ssize_t endpoint_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -279,12 +343,10 @@ static int x1_bridge_probe(struct platform_device *pdev)
 	struct pci_config_window *cfg;
 	struct resource *res, buses = { .start = 0, .end = 255, .flags = IORESOURCE_BUS };
 	struct x1_bridge *b;
-	struct device_node *smmu;
 	u32 domain;
 	int i, ret;
-	bool reserved;
 
-	if (!READ_ONCE(registration_window) || is_hyp_mode_available() ||
+	if (!READ_ONCE(registration_window) || !x1_pcie_environment_allowed() ||
 	    !x1_diag_board_allowed() || !x1_diag_nhi_complete() ||
 	    !of_property_read_bool(of_root, "birk,usb4-pci0-test") ||
 	    !of_property_read_bool(of_root, "birk,usb4-pci0-init-v23") ||
@@ -295,11 +357,6 @@ static int x1_bridge_probe(struct platform_device *pdev)
 	if (!res || res->start != 0x400000000ULL || resource_size(res) != 0x10000000 ||
 	    of_property_read_u32(dev->of_node, "linux,pci-domain", &domain) || domain)
 		return -EINVAL;
-	/* Match ordinary EL1/Gunyah boot. Never take ownership of this SMMU. */
-	smmu = of_find_node_by_path("/soc@0/iommu@15400000");
-	reserved = smmu && of_property_match_string(smmu, "status", "reserved") == 0;
-	of_node_put(smmu);
-	if (!reserved) return -EPERM;
 	if (bridge_owner) return -EBUSY;
 	b = devm_kzalloc(dev, sizeof(*b), GFP_KERNEL);
 	if (!b) return -ENOMEM;
@@ -403,7 +460,7 @@ int x1_pcie_start(void __iomem *router)
 {
 	int ret;
 	/* Before driver registration (and genpd attachment), not just in probe. */
-	if (!router || is_hyp_mode_available() || !x1_diag_board_allowed() || !x1_diag_nhi_complete() ||
+	if (!router || !x1_pcie_environment_allowed() || !x1_diag_board_allowed() || !x1_diag_nhi_complete() ||
 	    !of_property_read_bool(of_root, "birk,usb4-pci0-test") ||
 	    !of_property_read_bool(of_root, "birk,usb4-pci0-init-v23") ||
 	    !x1_diag_disabled("/soc@0/pcie@1bf8000") ||

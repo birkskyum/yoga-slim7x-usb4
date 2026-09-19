@@ -50,9 +50,11 @@ def check():
 
 def test():
     check()
+    subprocess.run([sys.executable, str(ROOT / 'tests/test_iort.py')], check=True)
     compiler = os.environ.get('CC', 'cc')
     names = ['link', 'enum', 'external', 'event', 'topology', 'policy', 'pan',
-             'pdlog', 'receiver', 'its', 'pci0_init', 'nvme_irq_v33', 'public_identity']
+             'pdlog', 'receiver', 'its', 'pci0_init', 'nvme_irq_v33', 'public_identity',
+             'pcie_environment']
     with tempfile.TemporaryDirectory(prefix='yoga-mocks-') as tmp:
         for name in names:
             executable = str(Path(tmp) / name)
@@ -72,7 +74,7 @@ def test():
         subprocess.run([compiler, *flags, '-DX1_NATIVE_LACIE_UID=0x123456789abcdef0ULL',
                         str(ROOT / 'tests/test_public_identity.c'), '-o', executable], check=True)
         subprocess.run([executable], check=True)
-    print('PASS 15 mock executions under ASan/UBSan; no hardware access.', flush=True)
+    print('PASS 16 mock executions under ASan/UBSan; no hardware access.', flush=True)
 
 def prepare(baseline):
     check()
