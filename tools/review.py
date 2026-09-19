@@ -22,6 +22,7 @@ def require(value, message):
         raise SystemExit(message)
 
 def check():
+    subprocess.run([sys.executable, str(ROOT / 'tools/check-qebspil.py')], check=True)
     record = json.loads((ROOT / 'provenance/export.json').read_text())
     for item in record['files']:
         require(digest(ROOT / item['path']) == item['public_sha256'], item['path'])
@@ -54,7 +55,7 @@ def test():
     compiler = os.environ.get('CC', 'cc')
     names = ['link', 'enum', 'external', 'event', 'topology', 'policy', 'pan',
              'pdlog', 'receiver', 'its', 'pci0_init', 'nvme_irq_v33', 'public_identity',
-             'pcie_environment']
+             'pcie_environment', 'adsp_handoff']
     with tempfile.TemporaryDirectory(prefix='yoga-mocks-') as tmp:
         for name in names:
             executable = str(Path(tmp) / name)
@@ -74,7 +75,7 @@ def test():
         subprocess.run([compiler, *flags, '-DX1_NATIVE_LACIE_UID=0x123456789abcdef0ULL',
                         str(ROOT / 'tests/test_public_identity.c'), '-o', executable], check=True)
         subprocess.run([executable], check=True)
-    print('PASS 16 mock executions under ASan/UBSan; no hardware access.', flush=True)
+    print('PASS 17 mock executions under ASan/UBSan; no hardware access.', flush=True)
 
 def prepare(baseline):
     check()

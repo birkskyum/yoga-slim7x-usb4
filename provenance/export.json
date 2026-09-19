@@ -64,8 +64,10 @@
     {
       "path": "snapshot/kernel/drivers/soc/qcom/Makefile",
       "private_source_sha256": "7656bf540bb8500dca1b57b7da3a0c57d4aa9243902a4205e54f6027f4db27f4",
-      "public_sha256": "7656bf540bb8500dca1b57b7da3a0c57d4aa9243902a4205e54f6027f4db27f4",
-      "changed_for_publication": false
+      "public_sha256": "33a4ba4269d63f55c524dae90edcb510f310cb8ef0fb5c15027b84634fd18ace",
+      "changed_for_publication": false,
+      "v38_export_sha256": "7656bf540bb8500dca1b57b7da3a0c57d4aa9243902a4205e54f6027f4db27f4",
+      "changed_since_v38_export": true
     },
     {
       "path": "snapshot/kernel/drivers/soc/qcom/yoga_link_plan.h",
@@ -124,7 +126,7 @@
     {
       "path": "snapshot/kernel/drivers/thunderbolt/Kconfig",
       "private_source_sha256": "8c9a54feb158d5f82915cea7ab8e86b6041fcb7b017f80593104468ea0a9ff25",
-      "public_sha256": "2d865c08c7c2d9122a5b74a9baf95ed2d7be765d0b402ed9e67933943fa530ff",
+      "public_sha256": "d5a80e1dd5cdc87a486d2bc0828f841570b1a3284d181f81d19db9c9dfac744a",
       "changed_for_publication": false,
       "v38_export_sha256": "8c9a54feb158d5f82915cea7ab8e86b6041fcb7b017f80593104468ea0a9ff25",
       "changed_since_v38_export": true
@@ -548,6 +550,83 @@
       "public_sha256": "b7f77e0599227d935bfee2d2fb2476181b369993e46c89ddf38e0d7aa620737d",
       "initial_source_sha256": "97ab2617199f77248fbc0c868e15fa6425de0dc7bf523a65faf5f205ec9efb24",
       "changed_since_initial_source": true
+    },
+    {
+      "path": "snapshot/kernel/drivers/remoteproc/qcom_q6v5_pas.c",
+      "private_source_sha256": null,
+      "origin": "Adaptation of pinned kernel; see docs/EL2-HANDOFF.md",
+      "changed_for_publication": false,
+      "public_sha256": "6383efdf39223d162d8a0307524da5a5cd5cd1b63e2b37d0d5be443d2c547716"
+    },
+    {
+      "path": "snapshot/kernel/drivers/soc/qcom/smp2p.c",
+      "private_source_sha256": null,
+      "origin": "Adaptation of pinned kernel; see docs/EL2-HANDOFF.md",
+      "changed_for_publication": false,
+      "public_sha256": "cdc5ab9a5187a12d219d77cf3478005e91c5c610aa181e670ae61e67ae5a0c14"
+    },
+    {
+      "path": "snapshot/kernel/drivers/rpmsg/rpmsg_core.c",
+      "private_source_sha256": null,
+      "origin": "Adaptation of pinned kernel; see docs/EL2-HANDOFF.md",
+      "changed_for_publication": false,
+      "public_sha256": "e7f436754aead25131d84174c045e121d647d5459d7d289be63f03780998e45b"
+    },
+    {
+      "path": "snapshot/kernel/include/linux/rpmsg.h",
+      "private_source_sha256": null,
+      "origin": "Adaptation of pinned kernel; see docs/EL2-HANDOFF.md",
+      "changed_for_publication": false,
+      "public_sha256": "fcfbfb25a6f76dc1f3cde990be7316a39a2d251436f220fe31fbc07a14f3c8a0"
+    },
+    {
+      "path": "snapshot/kernel/net/qrtr/smd.c",
+      "private_source_sha256": null,
+      "origin": "Adaptation of pinned kernel; see docs/EL2-HANDOFF.md",
+      "changed_for_publication": false,
+      "public_sha256": "a631fcc76911c77551464ea0c5901f383c195021e02716568eddffb42b895ae7"
+    },
+    {
+      "path": "snapshot/kernel/drivers/remoteproc/x1-adsp-handoff.h",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "46486f12a9e258518f6df7cf9f565d1d7ca308325506b22c6aa3c178e20e4618"
+    },
+    {
+      "path": "snapshot/kernel/drivers/soc/qcom/yoga_el2_service.c",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "cddac613430b1be9b86f25453b32b55125fe93d212390917751f48697eafea9b"
+    },
+    {
+      "path": "snapshot/kernel/include/linux/soc/qcom/x1-adsp-handoff-policy.h",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "e76a9dbfbae0cb098040104df80d6f5d15212349a7fceea3f3828a5104a8d162"
+    },
+    {
+      "path": "snapshot/runtime/init-el2-handoff",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "20ee365637c91c3d04d91d27b1ff4208301505dc722eb438a805df53cf812463"
+    },
+    {
+      "path": "snapshot/runtime/check-adsp",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "b6e4c45564144ce35ab33742e80693c062b499ceac5b440513a915a86d32354b"
+    },
+    {
+      "path": "snapshot/runtime/yoga-adsp-el2.dtso",
+      "private_source_sha256": null,
+      "origin": "EL2 source-only preparation",
+      "changed_for_publication": false,
+      "public_sha256": "be490f19c003dd687d10c4d0d63e8bbef2e96015f7ea8f13f909cab3c32fef48"
     }
   ],
   "source_revision_note": "EL2 source-only preparation; private v38 hashes retained"

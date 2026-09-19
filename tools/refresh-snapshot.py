@@ -29,10 +29,35 @@ def sha(data):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--new-file', action='append', default=[])
+    parser.add_argument('--existing-file', action='append', default=[],
+                        help='New snapshot path for an existing pinned-baseline kernel file')
+    parser.add_argument('--baseline', type=Path)
     args = parser.parse_args()
     old = json.loads(git('show', 'HEAD:reproduce/kernel-files.json'))
     record = json.loads(git('show', 'HEAD:provenance/export.json'))
     names = list(old['after'])
+    imports = {}
+    if args.existing_file:
+        if not args.baseline:
+            raise SystemExit('--existing-file requires the reconstructed pinned --baseline')
+        for line in (ROOT / 'reproduce/baseline-source.sha256').read_text().splitlines():
+            expected, name = line.split(maxsplit=1)
+            if sha((args.baseline / name).read_bytes()) != expected:
+                raise SystemExit('Pinned baseline mismatch: ' + name)
+        for name in args.existing_file:
+            p = Path(name)
+            if (p.is_absolute() or '..' in p.parts or
+                    p.parts[:2] != ('snapshot', 'kernel')):
+                raise SystemExit('Not a kernel snapshot path: ' + name)
+            relative = name.removeprefix('snapshot/kernel/')
+            if relative in names:
+                raise SystemExit('Already recorded: ' + name)
+            imports[relative] = (args.baseline / relative).read_bytes()
+            old['before'][relative] = sha(imports[relative])
+            names.append(relative)
+            record['files'].append({'path': name, 'private_source_sha256': None,
+                                   'origin': 'Adaptation of pinned kernel; see docs/EL2-HANDOFF.md',
+                                   'changed_for_publication': False})
     for name in args.new_file:
         p = Path(name)
         if (p.is_absolute() or '..' in p.parts or
@@ -56,6 +81,10 @@ def main():
             p.write_bytes(git('show', 'HEAD:snapshot/kernel/' + name))
         subprocess.run(['git', '-C', str(base), 'apply', '--reverse', '-'],
                        input=git('show', 'HEAD:' + PATCH), check=True)
+        for name, data in imports.items():
+            p = base / name
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
         for name, expected in old['before'].items():
             p = base / name
             if (p.exists() if expected is None else

@@ -6,6 +6,10 @@ remains EL1-only. The public SSD identity remains zero and rejects admission.
 No SanDisk write, Yoga boot, hardware MMIO or new storage read was performed
 for this preparation.
 
+The subsequent [ADSP handoff checkpoint](EL2-HANDOFF.md) implements the
+separate firmware-service prerequisite and local image packaging. It does
+not combine it with this PCI0 experiment and has no hardware result yet.
+
 ## Earlier EL2 boot is already proven; ADSP handoff is not
 
 The owner's 14 September 2026 KVM test records establish two successful

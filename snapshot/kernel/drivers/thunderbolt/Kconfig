@@ -56,6 +56,17 @@ config USB4_X1_EL2_TEST
 	  This does not change boot privilege, configure firmware or establish
 	  working MSI-X. The public external-device identity stays fail-closed.
 
+config USB4_X1_ADSP_HANDOFF
+	bool "Yoga EL2 attach-only ADSP service checkpoint (EXPERIMENTAL)"
+	depends on ARM64 && QCOM_Q6V5_PAS
+	depends on QCOM_PMIC_GLINK=y && QCOM_SMP2P=y
+	default n
+	help
+	  Separately selected RAM-only checkpoint for full ADSP preloaded by
+	  qebspil before EL2 entry. Requires exact Yoga DT markers and existing
+	  healthy SMP2P state. No firmware loading, PAS reset or recovery path.
+	  This does not establish USB4 or MSI-X success.
+
 config USB4_CONFIGFS
 	def_tristate USB4
 	depends on CONFIGFS_FS && !(USB4=y && CONFIGFS_FS=m)

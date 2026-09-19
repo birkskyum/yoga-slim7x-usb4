@@ -1,0 +1,46 @@
+#!/bin/busybox sh
+set -eu
+stop() {
+    dmesg > /run/handoff.log
+    echo "HANDOFF STOP: $*"
+    echo 'Photograph this screen. Cold power-off required. Do not retry.'
+    exit 1
+}
+test -e /sys/firmware/devicetree/base/birk,adsp-el2-service-test || stop 'wrong image'
+mkdir /run/adsp-once 2>/dev/null || stop 'already attempted'
+test ! -d /sys/bus/pci/devices/0000:00:00.0 || stop 'unexpected PCI host'
+test -L /sys/bus/platform/devices/pmic-glink/driver || stop 'PMIC platform not ready'
+echo 'Remove SanDisk; leave all data ports empty. Type YES to attach ADSP once.'
+read -r answer || stop 'input ended'
+test "$answer" = YES || stop 'not confirmed'
+modprobe qcom_q6v5_pas || stop 'attach module failed'
+count=0
+while test "$count" -lt 60; do
+    dmesg > /run/handoff.log
+    if grep -Eiq 'Unhandled context fault|SError|SMMU.*(error|fault)|fatal error|watchdog received|handling crash' /run/handoff.log; then
+        stop 'kernel fault reported'
+    fi
+    attached=0
+    for state in /sys/class/remoteproc/remoteproc*/state; do
+        test -e "$state" || continue
+        test "$(cat "$state")" != crashed || stop 'ADSP crashed'
+        test "$(cat "$state")" != attached || attached=$((attached + 1))
+    done
+    up=0
+    for result in /sys/bus/auxiliary/devices/pmic_glink.*/result; do
+        test -f "$result" || continue
+        grep -q 'EL2_PMICSERVICE service_up=1 passive=1' "$result" && up=$((up + 1))
+    done
+    if test "$attached" = 1 && test "$up" = 2; then
+        echo 'HANDOFF SERVICE PASS: ADSP attached at EL2; PMIC transport reports UP.'
+        echo 'Both clients share one service indication. No Type-C transaction was tested.'
+        echo 'This is NOT USB4, disk-read or MSI-X success.'
+        grep -E 'X1 ADSP HANDOFF|EL2 PMIC|All CPU.*EL2|Hyp mode|VHE' /run/handoff.log || true
+        echo 'Photograph this result, then poweroff -f. Do not attach LaCie in this boot.'
+        exit 0
+    fi
+    sleep 1
+    count=$((count + 1))
+done
+tail -n 35 /run/handoff.log
+stop 'no service checkpoint within 60 seconds'

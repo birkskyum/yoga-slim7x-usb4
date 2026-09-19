@@ -51,7 +51,15 @@
     "drivers/clk/qcom/x1-usb4-diag.inc": null,
     "include/linux/irqchip/arm-gic-v3-x1-audit.h": null,
     "include/linux/soc/qcom/x1-usb4-diag.h": null,
-    "drivers/thunderbolt/x1-pcie-environment.h": null
+    "drivers/thunderbolt/x1-pcie-environment.h": null,
+    "drivers/remoteproc/qcom_q6v5_pas.c": "354ebbca60e5f8706baec77ba5741a1635684a6ab3056e08b128723a0864494b",
+    "drivers/soc/qcom/smp2p.c": "af84f30d36a206cc7a0b95e39af686a78be88cf428ab9af8bfbc247d8209d13a",
+    "drivers/rpmsg/rpmsg_core.c": "58b145327037a4c168c1453d09c798ee25288d9b06dff52fb24a4efa4edd92e4",
+    "include/linux/rpmsg.h": "d9417175ed87b8ccb72719a147dfdf48d8c0b50eb197ba7c12b32bd6e965251e",
+    "net/qrtr/smd.c": "47e959455b8b988e30f41c8d91182b61dd31d2fdf46f39025e7a3bd297835219",
+    "drivers/remoteproc/x1-adsp-handoff.h": null,
+    "drivers/soc/qcom/yoga_el2_service.c": null,
+    "include/linux/soc/qcom/x1-adsp-handoff-policy.h": null
   },
   "after": {
     "drivers/nvme/host/core.c": "7aefd75023f00831aea88d730da57eb0ab34bee3764b4b9dbebbc7b323090a72",
@@ -63,7 +71,7 @@
     "drivers/nvme/host/x1-nvme-trace.h": "1755d3aab1a10c75251c34ab9ff6a299ae7ee91788ac68626555d077df4060fb",
     "drivers/irqchip/irq-gic-v3-its-x1-audit.h": "3806f0499100618834ab7af68d2017c25687fd38234c883c4ea6e97c240fe24e",
     "drivers/irqchip/irq-gic-v3-its.c": "7bb902665264253f1f071ad629fc3e11d59f6afdc0a039a1f2f501d712e6846f",
-    "drivers/soc/qcom/Makefile": "7656bf540bb8500dca1b57b7da3a0c57d4aa9243902a4205e54f6027f4db27f4",
+    "drivers/soc/qcom/Makefile": "33a4ba4269d63f55c524dae90edcb510f310cb8ef0fb5c15027b84634fd18ace",
     "drivers/soc/qcom/yoga_link_plan.h": "6d2d70aaada892ad35063c3d5af918113fc47404a358afff2a1435f49dc4ce7c",
     "drivers/soc/qcom/yoga_pan_packet.h": "46139d8c3165aa8b8a0a29930fca8c67dc1e7446ae07e79946c899a82e7ca749",
     "drivers/soc/qcom/yoga_pan_plan.h": "6505af2bdd42506afe1311881c2785b98e113dcd633c23fb7ca93b48467f65c1",
@@ -73,7 +81,7 @@
     "drivers/soc/qcom/yoga_ucsi_packet.h": "cad62435f33ee97ff2e09404378bcd36c8fb07cbe7b57135dd04438bcdd69296",
     "drivers/soc/qcom/yoga_ucsi_query.h": "8b9e011a62873a7e4639a2e5fd1565fa43bc52673bdf95e5912292911ff9aacd",
     "drivers/soc/qcom/yoga_ucsi_snapshot.c": "358f2a6d645fea210d0400dd9e44e735a7ca93d76347fc43cfd4a9670e024f7d",
-    "drivers/thunderbolt/Kconfig": "2d865c08c7c2d9122a5b74a9baf95ed2d7be765d0b402ed9e67933943fa530ff",
+    "drivers/thunderbolt/Kconfig": "d5a80e1dd5cdc87a486d2bc0828f841570b1a3284d181f81d19db9c9dfac744a",
     "drivers/thunderbolt/Makefile": "6501731f08548f036e7280e0a04c3f418c8952129da82cd536f172fddc1da6d0",
     "drivers/thunderbolt/ctl.c": "f6dca31400a2407482d0c2a4376009f053106365bc3db60974a90a09066a860f",
     "drivers/thunderbolt/domain.c": "90c00cd743fd71d1a48538a858885cefbfeb0f923b226fcc80e6ce844466183a",
@@ -105,6 +113,14 @@
     "drivers/clk/qcom/x1-usb4-diag.inc": "c66341bc6813457cebf03be408667d986d8dd2ef32a2f474502c0043181ae569",
     "include/linux/irqchip/arm-gic-v3-x1-audit.h": "6bed9f11afa92a9a7bafc55ec3be9d78b62fd08a4898f282ac1c1f68db0e5370",
     "include/linux/soc/qcom/x1-usb4-diag.h": "ed4fe38fae9563773487a6537c68f96bd29175552a90794f1f71251f17b1ff1e",
-    "drivers/thunderbolt/x1-pcie-environment.h": "1e289aff20942305aed66d89798fa724964b6f54ed93023e4fc7ed92e008f740"
+    "drivers/thunderbolt/x1-pcie-environment.h": "1e289aff20942305aed66d89798fa724964b6f54ed93023e4fc7ed92e008f740",
+    "drivers/remoteproc/qcom_q6v5_pas.c": "6383efdf39223d162d8a0307524da5a5cd5cd1b63e2b37d0d5be443d2c547716",
+    "drivers/soc/qcom/smp2p.c": "cdc5ab9a5187a12d219d77cf3478005e91c5c610aa181e670ae61e67ae5a0c14",
+    "drivers/rpmsg/rpmsg_core.c": "e7f436754aead25131d84174c045e121d647d5459d7d289be63f03780998e45b",
+    "include/linux/rpmsg.h": "fcfbfb25a6f76dc1f3cde990be7316a39a2d251436f220fe31fbc07a14f3c8a0",
+    "net/qrtr/smd.c": "a631fcc76911c77551464ea0c5901f383c195021e02716568eddffb42b895ae7",
+    "drivers/remoteproc/x1-adsp-handoff.h": "46486f12a9e258518f6df7cf9f565d1d7ca308325506b22c6aa3c178e20e4618",
+    "drivers/soc/qcom/yoga_el2_service.c": "cddac613430b1be9b86f25453b32b55125fe93d212390917751f48697eafea9b",
+    "include/linux/soc/qcom/x1-adsp-handoff-policy.h": "e76a9dbfbae0cb098040104df80d6f5d15212349a7fceea3f3828a5104a8d162"
   }
 }

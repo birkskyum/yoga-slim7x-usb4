@@ -54,6 +54,11 @@ the owner's earlier successful EL2/KVM boots and preceding SMMU fault storm.
 The DSP policy follows Jens Glathe's non-PAS overlay split, not a new fix
 claimed here. The earlier KVM test did not validate full ADSP/PMIC startup.
 
+The [ADSP handoff candidate](EL2-HANDOFF.md) adds a restricted qebspil
+derivative, attach-only Linux path, SMP2P/QRTR startup fixes and local-only
+packaging. That document records Stephan Gerhold's original patch attribution.
+EFI binaries, launch payload and firmware are not published.
+
 `provenance/export.json` retains every original `private_source_sha256`.
 For modified exports it additionally retains `v38_export_sha256` and marks
 `changed_since_v38_export`. Newly authored snapshot files have no private

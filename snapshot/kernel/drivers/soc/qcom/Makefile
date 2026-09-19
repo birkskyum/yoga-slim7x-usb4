@@ -11,6 +11,7 @@ obj-$(CONFIG_QCOM_PD_MAPPER)	+= qcom_pd_mapper.o
 obj-$(CONFIG_QCOM_PDR_HELPERS)	+= pdr_interface.o
 obj-$(CONFIG_QCOM_PDR_MSG)	+= qcom_pdr_msg.o
 obj-$(CONFIG_QCOM_PMIC_GLINK)	+= pmic_glink.o
+obj-$(CONFIG_USB4_X1_ADSP_HANDOFF) += yoga_el2_service.o
 ifeq ($(CONFIG_USB4_X1_TYPEC_DIAG),y)
 obj-y += yoga_pdlog.o
 obj-y	+= yoga_typec_observer.o yoga_ucsi_snapshot.o

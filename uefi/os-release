@@ -1,0 +1,3 @@
+ID=yoga-el2-handoff
+NAME="Yoga EL2 ADSP handoff checkpoint"
+PRETTY_NAME="Experimental RAM-only ADSP checkpoint, not USB4 success"

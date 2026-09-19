@@ -1,0 +1,264 @@
+diff --git a/src/dtb.c b/src/dtb.c
+index 294395e..01e5f02 100644
+--- a/src/dtb.c
++++ b/src/dtb.c
+@@ -43,6 +43,13 @@ static EFI_STATUS dtb_load_pil_data(struct dtb_context *ctx, int node, struct pi
+ 	if (!fw_name)
+ 		return EFI_INVALID_PARAMETER;
+ 
++	/* Exact known Yoga reserved regions and files, not an arbitrary PIL. */
++	if ((idx == 0 && (fw->mem_addr != 0x87e00000 || fw->mem_size != 0x3a00000 ||
++		strcmp(fw_name, "qcom/x1e80100/LENOVO/83ED/qcadsp8380.mbn"))) ||
++	    (idx == 1 && (fw->mem_addr != 0x8b800000 || fw->mem_size != 0x80000 ||
++		strcmp(fw_name, "qcom/x1e80100/LENOVO/83ED/adsp_dtbs.elf"))))
++		return EFI_SECURITY_VIOLATION;
++
+ 	Print(u"Firmware %d: base 0x%x, size 0x%x, path %a\n", idx, fw->mem_addr, fw->mem_size, fw_name);
+ 	return fw_prepare(fw, ctx->root_dir, fw_name);
+ }
+@@ -126,6 +133,9 @@ EFI_STATUS dtb_enumerate_rprocs(const void *dtb)
+ 	ret = fdt_check_header(dtb);
+ 	if (ret)
+ 		return EFI_VOLUME_CORRUPTED;
++	if (QEBSPIL_ALWAYS_START || fdt_node_check_compatible(dtb, 0, "lenovo,yoga-slim7x") ||
++	    !fdt_getprop(dtb, 0, "birk,adsp-el2-service-test", NULL))
++		return EFI_SECURITY_VIOLATION;
+ 
+ 	while ((node = fdt_next_node(dtb, node, NULL)) >= 0) {
+ 		const struct pil_type *type;
+@@ -146,30 +156,37 @@ EFI_STATUS dtb_enumerate_rprocs(const void *dtb)
+ 		type = dtb_find_pil_type(dtb, node);
+ 		if (!type)
+ 			continue;
++		if (strcmp(type->compatible, "qcom,x1e80100-adsp-pas") ||
++		    node != fdt_path_offset(dtb, "/soc@0/remoteproc@6800000") ||
++		    fdt_getprop(dtb, node, "iommus", NULL) || found == EFI_SUCCESS)
++			return EFI_SECURITY_VIOLATION;
+ 
+ 		Print(u"qebspil: Found remoteproc: %a\n", type->compatible);
+ 
+ 		if (!dtb_init_ctx(&ctx))
+-			return found;
++			return EFI_NOT_READY;
+ 
+ 		pil = pil_alloc(type);
+ 		if (!pil) {
+ 			Print(u"Failed to allocate remoteproc %a\n", type->compatible);
+-			continue;
++			dtb_free_ctx(&ctx);
++			return EFI_OUT_OF_RESOURCES;
+ 		}
+ 
+ 		status = dtb_enumerate_rproc(&ctx, node, pil);
+ 		if (EFI_ERROR(status)) {
+ 			Print(u"Failed to enumerate remoteproc %a: %r\n", type->compatible, status);
+ 			pil_free(pil);
+-			continue;
++			dtb_free_ctx(&ctx);
++			return status;
+ 		}
+ 
+ 		status = pil_prepare(pil);
+ 		if (EFI_ERROR(status)) {
+ 			Print(u"Failed to prepare remoteproc PIL %a: %r\n", type->compatible, status);
+ 			pil_free(pil);
+-			continue;
++			dtb_free_ctx(&ctx);
++			return status;
+ 		}
+ 
+ 		found = EFI_SUCCESS;
+diff --git a/src/event.c b/src/event.c
+index 12b277e..c5595d2 100644
+--- a/src/event.c
++++ b/src/event.c
+@@ -56,9 +56,13 @@ EFI_STATUS event_register_late_ebs_callback(EFI_EVENT *event, event_callback_fn
+ 	    ievent->Type == EFI_EVENT_SIGNAL_EXIT_BOOT_SERVICES &&
+ 	    ievent->NotifyTpl == EFI_TPL_CALLBACK)
+ 		ievent->NotifyTpl = EFI_TPL_CALLBACK - 1;
+-	else
++	else {
+ 		Print(u"qebspil: Unexpected IEvent structure (not edk2)? Signature: 0x%x, Type: 0x%x, TPL: %d. This will probably cause problems later.\n",
+ 		      ievent->Signature, ievent->Type, ievent->NotifyTpl);
++		BS->CloseEvent(*event);
++		*event = NULL;
++		return EFI_UNSUPPORTED;
++	}
+ 
+ 	return EFI_SUCCESS;
+ }
+diff --git a/src/main.c b/src/main.c
+index 8262564..763640c 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -10,22 +10,31 @@
+ 
+ EFI_LOADED_IMAGE_PROTOCOL *LoadedImage;
+ static EFI_EVENT ebs_event;
++static BOOLEAN yoga_prepared;
++
++static void yoga_halt(EFI_STATUS status)
++{
++	Print(u"YOGA ADSP HANDOFF STOP: %r. Hold power for a full shutdown.\n", status);
++	for (;;)
++		__asm__ __volatile__("wfe");
++}
+ 
+ static EFI_STATUS efi_late_ebs(void)
+ {
+ 	EFI_STATUS status;
+ 
++	if (!yoga_prepared)
++		yoga_halt(EFI_NOT_READY);
+ 	status = pil_finish_all();
+-	if (status == EFI_NOT_FOUND)
+-		return EFI_SUCCESS; /* No rempteprocs found */
+-	if (!EFI_ERROR(status))
+-		return status;
++	if (EFI_ERROR(status))
++		yoga_halt(status);
+ 
+ 	/*
+ 	 * Wait a bit to let remoteprocs finish handover.
+ 	 * FIXME: Wait for the SMP2P signals instead
+ 	 */
+-	return BS->Stall(500 * 1000 * 1000);
++	Print(u"YOGA ADSP HANDOFF: full firmware start calls succeeded. Linux must validate services.\n");
++	return BS->Stall(500 * 1000);
+ }
+ 
+ static EFI_STATUS efi_dtb_changed(void)
+@@ -34,6 +43,7 @@ static EFI_STATUS efi_dtb_changed(void)
+ 	void *dtb;
+ 
+ 	/* Free what we prepared last time in case the DTB changed */
++	yoga_prepared = FALSE;
+ 	pil_free_all();
+ 
+ 	status = LibGetSystemConfigurationTable(&EfiDtbTableGuid, &dtb);
+@@ -48,12 +58,7 @@ static EFI_STATUS efi_dtb_changed(void)
+ 	if (EFI_ERROR(status))
+ 		return status;
+ 
+-	/* Register late EBS event (if not already) to start the rprocs later */
+-	if (!ebs_event) {
+-		status = event_register_late_ebs_callback(&ebs_event, efi_late_ebs);
+-		if (EFI_ERROR(status))
+-			return status;
+-	}
++	yoga_prepared = TRUE;
+ 
+ 	return EFI_SUCCESS;
+ }
+@@ -65,7 +70,7 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
+ 
+ 	InitializeLib(image, system_table);
+ 
+-	Print(u"Hello World!\n");
++	Print(u"Yoga EL2 ADSP-only handoff. After loading, boot only handoff.efi or cold power off.\n");
+ 
+ 	status = BS->HandleProtocol(image, &LoadedImageProtocol, (VOID**)&LoadedImage);
+ 	if (EFI_ERROR(status))
+@@ -75,9 +80,19 @@ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *system_table)
+ 	if (EFI_ERROR(status))
+ 		return status;
+ 
+-	status = event_register_group_callback(&EfiDtbTableGuid, &event, efi_dtb_changed);
++	status = event_register_late_ebs_callback(&ebs_event, efi_late_ebs);
+ 	if (EFI_ERROR(status))
+ 		return status;
+ 
+-	return efi_dtb_changed();
++	status = event_register_group_callback(&EfiDtbTableGuid, &event, efi_dtb_changed);
++	if (EFI_ERROR(status)) {
++		BS->CloseEvent(ebs_event);
++		return status;
++	}
++
++	status = efi_dtb_changed();
++	if (EFI_ERROR(status))
++		Print(u"qebspil: waiting for the exact handoff.efi DT (%r).\n", status);
++	/* Stay resident once callbacks are registered, even on a rejected DT. */
++	return EFI_SUCCESS;
+ }
+diff --git a/src/pil.c b/src/pil.c
+index 1a7d7d4..112b531 100644
+--- a/src/pil.c
++++ b/src/pil.c
+@@ -49,6 +49,47 @@ EFI_STATUS pil_proxy_vote(const EFI_GUID *guid)
+ 	return proxy->Vote(PIL_PROXY_MODE_VOTE);
+ }
+ 
++static EFI_STATUS yoga_check_reserved(const struct pil_fw *fw)
++{
++	UINTN count, key, stride;
++	UINT32 version;
++	EFI_MEMORY_DESCRIPTOR *map;
++	UINT64 pos = fw->mem_addr, end = pos + fw->mem_size;
++	EFI_STATUS status = EFI_SECURITY_VIOLATION;
++
++	map = LibMemoryMap(&count, &key, &stride, &version);
++	if (!map)
++		return EFI_OUT_OF_RESOURCES;
++	if (stride < sizeof(*map) || version != EFI_MEMORY_DESCRIPTOR_VERSION)
++		goto out;
++	/* EFI map need not be sorted. Cover the entire target with reserved
++	 * descriptors; never copy firmware into allocatable or MMIO memory.
++	 */
++	while (pos < end) {
++		BOOLEAN found = FALSE;
++		for (UINTN i = 0; i < count; i++) {
++			EFI_MEMORY_DESCRIPTOR *d = (VOID*)((UINT8*)map + i * stride);
++			UINT64 limit;
++			if (d->NumberOfPages > (~(UINT64)0 - d->PhysicalStart) / EFI_PAGE_SIZE)
++				goto out;
++			limit = d->PhysicalStart + d->NumberOfPages * EFI_PAGE_SIZE;
++			if (d->PhysicalStart > pos || limit <= pos)
++				continue;
++			if (d->Type != EfiReservedMemoryType)
++				goto out;
++			pos = limit < end ? limit : end;
++			found = TRUE;
++			break;
++		}
++		if (!found)
++			goto out;
++	}
++	status = EFI_SUCCESS;
++out:
++	FreePool(map);
++	return status;
++}
++
+ EFI_STATUS pil_prepare(struct pil *pil)
+ {
+ 	EFI_STATUS status;
+@@ -61,10 +102,12 @@ EFI_STATUS pil_prepare(struct pil *pil)
+ 		if (!pil->fw[c].elf_data)
+ 			return EFI_LOAD_ERROR;
+ 
+-		/*
+-		 * TODO: Perhaps we should parse the EFI memory map and ensure
+-		 * that the memory regions are reserved?
+-		 */
++		status = yoga_check_reserved(&pil->fw[c]);
++		if (EFI_ERROR(status))
++			return status;
++		status = fw_check(&pil->fw[c]);
++		if (EFI_ERROR(status))
++			return status;
+ 	}
+ 
+ 	/*
+@@ -195,8 +238,9 @@ EFI_STATUS pil_finish_all(void)
+ 			break;
+ 
+ 		status = pil_finish(&loaded_pil[i]);
+-		if (!EFI_ERROR(status))
+-			found = EFI_SUCCESS;
++		if (EFI_ERROR(status))
++			return status;
++		found = EFI_SUCCESS;
+ 	}
+ 
+ 	return found;

@@ -1,0 +1,22 @@
+#!/bin/busybox sh
+export PATH=/bin:/sbin
+/bin/busybox --install -s /bin
+mount -t devtmpfs devtmpfs /dev
+exec </dev/console >/dev/console 2>&1
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /run
+echo /bin/false > /proc/sys/kernel/modprobe
+dmesg -n 4
+echo
+echo 'YOGA EL2 ADSP HANDOFF. RAM only. NOT a USB4 or disk test.'
+echo 'Keep LaCie, Ethernet, hubs and other data peripherals disconnected.'
+echo 'All PCIe hosts and USB data controllers are disabled.'
+echo 'UEFI has attempted to start full ADSP before EL2 entry.'
+echo 'Remove the SanDisk now. Then type check-adsp ONCE.'
+echo 'No firmware reload, restart, recovery, mount or storage probe is permitted.'
+echo 'After photographing the result, type poweroff -f.'
+echo 'A hang or fault requires holding power for a full shutdown.'
+uname -r
+dmesg > /run/boot.log
+while :; do setsid cttyhack sh; done

@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/* First handoff checkpoint ONLY. Apply directly to the pinned Yoga base,
+ * not to yoga-mcu.dtso. Needs qebspil then SLBounce. Never boot at EL1.
+ * Non-PAS ownership follows Jens Glathe; broken-reset follows Stephan Gerhold.
+ */
+/dts-v1/;
+/plugin/;
+&{/} { birk,adsp-el2-service-test; };
+&apss_watchdog { status = "okay"; };
+&sbsa_watchdog { status = "disabled"; };
+&gpu { status = "disabled"; };
+&gpu_zap_shader { status = "disabled"; };
+&iris { status = "disabled"; };
+&mdss { status = "disabled"; };
+&pcie3 { status = "disabled"; };
+&pcie4 { status = "disabled"; };
+&pcie5 { status = "disabled"; };
+&pcie6a { status = "disabled"; };
+&pcie_smmu { status = "okay"; };
+&remoteproc_cdsp { status = "disabled"; };
+&remoteproc_adsp {
+	status = "okay";
+	qcom,broken-reset;
+	/* No top-level iommus. Keep the boot-firmware mapping. */
+	glink-edge { fastrpc { status = "disabled"; }; };
+};
+/* No USB data host or retimer probing in the handoff checkpoint. */
+&usb_1_ss0 { status = "disabled"; };
+&usb_1_ss1 { status = "disabled"; };
+&usb_1_ss2 { status = "disabled"; };
+&i2c1 { typec-mux@8 { status = "disabled"; }; };
+&i2c3 { typec-mux@8 { status = "disabled"; }; };
+&i2c7 { typec-mux@8 { status = "disabled"; }; };

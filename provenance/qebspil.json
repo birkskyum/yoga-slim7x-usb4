@@ -1,0 +1,23 @@
+{
+  "qebspil": {
+    "url": "https://github.com/stephan-gh/qebspil",
+    "revision": "8e4d9e676a3b3afe136cda9b953a2139ff1a32d0",
+    "dtc": "2d10aa2afe35527728db30b35ec491ecb6959e5c",
+    "gnu_efi": "1fee8ab566ce91b9cbab9f2c85db96566d79063b",
+    "always_start": 0,
+    "patch": "uefi/qebspil-yoga.patch",
+    "patch_sha256": "b26ef1a07189656a4887abd6266f2098e919790fe46061173633420b5d9d48f5"
+  },
+  "before": {
+    "src/dtb.c": "825586976ad9f9b1214b919d48b1d4bb72e0f14c4700f8ab5730c5531aca403b",
+    "src/event.c": "dc7eb03b6a4935259603405525290b204bbe0119003e749adf03622ac56f342e",
+    "src/main.c": "f96d253e55328ddbcd27ba9f0509ac24e956fa505ac9b4110ebf166e48d0185c",
+    "src/pil.c": "09630eb13ecd83a4f996b259d64aa6af56ebfb046cc212a74b3e80c965f103f0"
+  },
+  "after": {
+    "src/dtb.c": "460ed6ff48335447aabd45f65a178822f848f10d7df025298564d0006517679c",
+    "src/event.c": "b7f47e872d147ef5746836ac7e76f69df72c2ea53e6005e6eced00582414a726",
+    "src/main.c": "41a86bda073cc7f1e0788eeb4f101188375bc4392244385efd7aec9df89fd322",
+    "src/pil.c": "09b9e595de4684cbe3b3c8aa9cdd3bb94e1113440e0747e049878e7153ce9689"
+  }
+}

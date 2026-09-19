@@ -22,6 +22,7 @@ not included. See [publication changes](docs/PROVENANCE.md).
 
 - [Results and unresolved MSI-X route](docs/RESULTS.md)
 - [Separate EL2 source-only candidate and evidence audit](docs/EL2-PREP.md)
+- [EL2 ADSP handoff checkpoint and local image preparation](docs/EL2-HANDOFF.md)
 - [Reconstruct and build](docs/REPRODUCE.md)
 - [Authorship and publication changes](docs/PROVENANCE.md)
 - [Safety and contribution rules](CONTRIBUTING.md)
