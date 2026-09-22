@@ -21,7 +21,7 @@ manifests and machine-specific activation/deployment scripts are not included.
 | `root-port-fixup.c` | Built-in, exact-host early class/no-MSI fixup excerpt | Must be integrated into built-in PCI code, not a loadable fixup table |
 | `runtime/mount_guard.py` | Strict mount and parent propagation classifier | Used by managed eject; not permission to ignore foreign mounts |
 | `runtime/boot_evidence.py` | Current-boot EL1 kernel-journal proof independent of rolling dmesg | First-generation proof passed; second-generation filesystem gate not yet validated |
-| `runtime/eject_guard.py` | Bounded wait for transient pre-unmount namespace conflicts | **Local candidate only: not installed or hardware-tested** |
+| `runtime/eject_guard.py` | Waits up to 45 s for a transient namespace copy, such as the one systemd-hostnamed holds after Files starts it | **Installed for the next hardware test; not yet hardware-validated** |
 
 The kernel sources are byte-for-byte extracts of the listed development
 checkpoints, not rewritten pseudocode. Some header comments still say
@@ -77,12 +77,18 @@ python3 tools/review.py check
 The receiver tests compile **actual extracted stop/release functions** with
 mocked IRQ/MMIO/devres effects, covering refusal paths, ordering and failures.
 They are not a full kernel compilation or evidence of endpoint IRQ delivery.
-The eject tests validate the uninstalled bounded-wait helper and unchanged
-classifier rejection. Actual unmount-worker integration tests and hardware
-first-click eject validation are still required.
+The eject tests cover the 45-second helper, including the observed
+30-second service lifetime that the previous 10-second bound could not
+outlast, and show with the unchanged classifier why a read-only service copy
+is a conflict. Integration tests against the private frozen unmount worker
+also passed (transient conflict then one normal unmount; persistent conflict,
+no unmount; kernel EBUSY reported once; strict post-unmount check; evidence
+failure fails closed). That worker is not part of this export, and hardware
+first-click eject validation is still required.
 
 Publication checks passed on 22 September: 7 component/export tests (including
-actual receiver stop/release under ASan/UBSan), 8 eject-helper tests, the existing
+actual receiver stop/release under ASan/UBSan), 8 eject-helper tests (11 after the
+23 September helper update), the existing
 source-hash/patch-roundtrip check and all 15 original public mock executions.
 The old receiver-release fixture was updated to model the real positive
 resource-count return value and reject zero; no production function was changed

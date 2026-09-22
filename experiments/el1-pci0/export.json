@@ -78,9 +78,9 @@
     {
       "export": "runtime/eject_guard.py",
       "changes": [],
-      "source_sha256": "cded6851561652f4b0fafd6828d1231eeeb3bb9fc7d497d414003af4c232eeb2",
-      "public_sha256": "cded6851561652f4b0fafd6828d1231eeeb3bb9fc7d497d414003af4c232eeb2",
-      "source_checkpoint": "dev19/eject-settle1/eject_guard.py"
+      "source_sha256": "13656084de4fd3981005a371b5c4005d56a717fa5f4d17b1d30b5d67700c9237",
+      "public_sha256": "13656084de4fd3981005a371b5c4005d56a717fa5f4d17b1d30b5d67700c9237",
+      "source_checkpoint": "dev19/plugcycle1/runtime/dev19/eject_guard.py"
     },
     {
       "export": "tests/test_receiver_stop.py",
@@ -105,12 +105,13 @@
     {
       "export": "runtime/test_eject_guard.py",
       "changes": [
-        "Classifier test path relocated to the exported unchanged classifier.",
-        "Ephemeral process/namespace fixture replaced by synthetic values."
+        "Helper cases extracted from the private plugcycle1 runtime suite.",
+        "Classifier tests use the exported unchanged classifier.",
+        "Ephemeral process/namespace fixtures replaced by synthetic values."
       ],
-      "source_sha256": "9d29dc91843afb69090d9eec37b118c1bf77463650fbfc99c242ed9fa4a1736c",
-      "public_sha256": "380395aa8bbdf6d61ee6c163609cc759bcb9b37c034821bb98c0573e5103d1ac",
-      "source_checkpoint": "dev19/eject-settle1/test_eject_guard.py"
+      "source_sha256": "61611451415c3958634649083743d99dd19e12d6b5f4b8497225c1b7ddb2fb73",
+      "public_sha256": "c723b29ac221a996a384982bad240ea97355bd87013637c7512ff6ba9ca9c801",
+      "source_checkpoint": "dev19/plugcycle1/test_plugcycle_runtime.py"
     }
   ],
   "additional_sources": {
@@ -118,6 +119,7 @@
     "pcie0-interrupts.dtsi": "Owner-provided Qualcomm assignment with explicit interrupt-parent and removal of obsolete msi-map-mask.",
     "tests/source_helpers.py": "Self-contained extraction helper from dev19/test_retained_cm.py."
   },
-  "hardware_scope": "Read docs/EL1-USB4-2026-09-22.md. Eject wait is uninstalled; reliable reconnect unresolved.",
-  "private_payloads_included": false
+  "hardware_scope": "Read docs/EL1-USB4-2026-09-22.md. The 45-second eject wait is installed for the next hardware test but not yet validated; reliable reconnect unresolved.",
+  "private_payloads_included": false,
+  "updated": "2026-09-23"
 }
