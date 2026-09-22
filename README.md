@@ -1,5 +1,16 @@
 # Yoga Slim 7x USB4 development
 
+**22 September 2026 update:** experimental normal-EL1 Omarchy now has genuine
+DWC MSI-X, verified external read/write and a short ~2.6 GB/s read / ~2.8 GB/s
+write filesystem demonstration. Safe removal has passed; reliable reconnect
+and general plug-and-play remain unfinished. See the [Qualcomm guidance,
+results and limitations](docs/EL1-USB4-2026-09-22.md) and [selected actual
+implementation sources/tests](experiments/el1-pci0/README.md).
+
+The rest of this page describes the **historical v38 export**, not the current
+hardware-tested development kernel. The new source component is a partial
+review export, not a complete replacement kernel or installer.
+
 Experimental Linux USB4 bring-up for the Lenovo Yoga Slim 7x (83ED,
 Snapdragon X1E80100). This publishes the source behind the v38 diagnostic
 checkpoint so others can inspect it, reproduce the software tests and build

@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "date": "2026-09-22",
+  "scope": "Selected reference code, not complete kernel overlay or boot recipe",
+  "baseline": "https://github.com/jdvmi00/glymur-usb4/tree/109b47c46634c65be22e588756e8bdd8142ac6cb",
+  "public_parent": "b8926a4a64f619fa5ffa4fe6f65848bd1ba9845e",
+  "files": [
+    {
+      "export": "kernel/drivers/thunderbolt/x1-imsi.c",
+      "changes": [],
+      "source_sha256": "29b4db29c4b8ed78a7d08deaa7807386b9e1b5a7e5d910ee8133b097f615b50c",
+      "public_sha256": "29b4db29c4b8ed78a7d08deaa7807386b9e1b5a7e5d910ee8133b097f615b50c",
+      "source_checkpoint": "dev19/retire-fix/kernel/drivers/thunderbolt/x1-imsi.c"
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/x1-imsi.h",
+      "changes": [],
+      "source_sha256": "998ea5d4b7db65facf2579384c6308f807e97859b74762acfb877cad40fcadd7",
+      "public_sha256": "998ea5d4b7db65facf2579384c6308f807e97859b74762acfb877cad40fcadd7",
+      "source_checkpoint": "dev19/kernel/drivers/thunderbolt/x1-imsi.h"
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/x1-imsi-policy.c",
+      "changes": [],
+      "source_sha256": "7fe56a62a9cf5bfc9d0a1d9872008a0de263c2b0d317fc1a8cdda4173076bb04",
+      "public_sha256": "7fe56a62a9cf5bfc9d0a1d9872008a0de263c2b0d317fc1a8cdda4173076bb04",
+      "source_checkpoint": "dev19/kernel/drivers/thunderbolt/x1-imsi-policy.c"
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/x1-imsi-policy.h",
+      "changes": [],
+      "source_sha256": "a2ccd0221f9cefbe60c6997b63d1e27a276cd7105840abd88f3e0d727204d852",
+      "public_sha256": "a2ccd0221f9cefbe60c6997b63d1e27a276cd7105840abd88f3e0d727204d852",
+      "source_checkpoint": "dev19/kernel/drivers/thunderbolt/x1-imsi-policy.h"
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/x1-pci0-mem.h",
+      "changes": [],
+      "source_sha256": "acd00400bb4a0dee4e09cded9fea3360b5a1dc535f8a678837bfef456c565eea",
+      "public_sha256": "acd00400bb4a0dee4e09cded9fea3360b5a1dc535f8a678837bfef456c565eea",
+      "source_checkpoint": "dev19/kernel/drivers/thunderbolt/x1-pci0-mem.h"
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.h",
+      "changes": [],
+      "source_sha256": "59f5c8e23c0e8e0edbd120a20430c8e5e5a534a7ef31f02c6ca1c07e4d2c4f60",
+      "public_sha256": "59f5c8e23c0e8e0edbd120a20430c8e5e5a534a7ef31f02c6ca1c07e4d2c4f60",
+      "source_checkpoint": "dev19/kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.h"
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-host.c",
+      "changes": [],
+      "source_sha256": "72e6e2d85ef779004a9e2f5dcfdab9fefb133046229274de7d0176ace9afa826",
+      "public_sha256": "72e6e2d85ef779004a9e2f5dcfdab9fefb133046229274de7d0176ace9afa826",
+      "source_checkpoint": "dev19/reconnect-fix1/qcom-usb4-x1-host.c"
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.c",
+      "changes": [],
+      "source_sha256": "941c75efa72b035422387e389ed124cdb1b7e0960f5e5c70f5786b1bc57ca49d",
+      "public_sha256": "941c75efa72b035422387e389ed124cdb1b7e0960f5e5c70f5786b1bc57ca49d",
+      "source_checkpoint": "dev19/reconnect-fix2/qcom-usb4-x1-pcie.c"
+    },
+    {
+      "export": "runtime/boot_evidence.py",
+      "changes": [],
+      "source_sha256": "4b3e8118c77c040ab9fd16ebb93771bbf7c620a595e24cff741884eca92fde22",
+      "public_sha256": "4b3e8118c77c040ab9fd16ebb93771bbf7c620a595e24cff741884eca92fde22",
+      "source_checkpoint": "dev19/bootproof-fix1/boot_evidence.py"
+    },
+    {
+      "export": "runtime/mount_guard.py",
+      "changes": [],
+      "source_sha256": "514680019f7224eada0e6d13f1441fd2312fcf88c8169b05a18284ba465e9f8a",
+      "public_sha256": "514680019f7224eada0e6d13f1441fd2312fcf88c8169b05a18284ba465e9f8a",
+      "source_checkpoint": "reusable/mount_guard.py"
+    },
+    {
+      "export": "runtime/eject_guard.py",
+      "changes": [],
+      "source_sha256": "cded6851561652f4b0fafd6828d1231eeeb3bb9fc7d497d414003af4c232eeb2",
+      "public_sha256": "cded6851561652f4b0fafd6828d1231eeeb3bb9fc7d497d414003af4c232eeb2",
+      "source_checkpoint": "dev19/eject-settle1/eject_guard.py"
+    },
+    {
+      "export": "tests/test_receiver_stop.py",
+      "changes": [
+        "Test helper import made self-contained.",
+        "Source root relocated within the public component."
+      ],
+      "source_sha256": "7cb8fea9066d20ce6fedf60cd64c12c62b2fa6fdbb03b695ddce49b0d8ff9068",
+      "public_sha256": "0837fce3e7af3ec42997bf0a29fc6ee0701146c619b0f9e1716fd1d6166dbc58",
+      "source_checkpoint": "dev19/test_receiver_stop.py"
+    },
+    {
+      "export": "tests/test_receiver_release.py",
+      "changes": [
+        "Test helper import made self-contained.",
+        "Mock devres_release_group success updated to the positive resource count required by the current hardware-tested source; zero-count failure case retained explicitly."
+      ],
+      "source_sha256": "12f013f4413c6f32d0b22257b9909ee91d4fd1d235f99aaaf451b9057eb35c41",
+      "public_sha256": "aee1af08c8734e30e9afb37d49855b2a75d3e2fcefb33d53b583f68680b9a120",
+      "source_checkpoint": "dev19/test_receiver_release.py"
+    },
+    {
+      "export": "runtime/test_eject_guard.py",
+      "changes": [
+        "Classifier test path relocated to the exported unchanged classifier.",
+        "Ephemeral process/namespace fixture replaced by synthetic values."
+      ],
+      "source_sha256": "9d29dc91843afb69090d9eec37b118c1bf77463650fbfc99c242ed9fa4a1736c",
+      "public_sha256": "380395aa8bbdf6d61ee6c163609cc759bcb9b37c034821bb98c0573e5103d1ac",
+      "source_checkpoint": "dev19/eject-settle1/test_eject_guard.py"
+    }
+  ],
+  "additional_sources": {
+    "root-port-fixup.c": "Exact qcom_yoga_x1_pci0_fixup and declaration excerpt from dev19 pcie-qcom.c; SPDX/includes added.",
+    "pcie0-interrupts.dtsi": "Owner-provided Qualcomm assignment with explicit interrupt-parent and removal of obsolete msi-map-mask.",
+    "tests/source_helpers.py": "Self-contained extraction helper from dev19/test_retained_cm.py."
+  },
+  "hardware_scope": "Read docs/EL1-USB4-2026-09-22.md. Eject wait is uninstalled; reliable reconnect unresolved.",
+  "private_payloads_included": false
+}
