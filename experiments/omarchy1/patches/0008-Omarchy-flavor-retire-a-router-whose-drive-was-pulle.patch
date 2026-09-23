@@ -1,0 +1,471 @@
+From 5a928c9da15db3be360663dcc014baca2e312ba7 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 04:57:03 +0200
+Subject: [PATCH 08/10] Omarchy flavor: retire a router whose drive was pulled
+ without Eject, with no access to the gone device
+
+---
+ drivers/thunderbolt/qcom-usb4-x1-host.c | 173 +++++++++++++++++++++++-
+ drivers/thunderbolt/qcom-usb4-x1-pcie.c |  71 +++++++++-
+ drivers/thunderbolt/qcom-usb4-x1-pcie.h |   9 ++
+ drivers/thunderbolt/tb.c                |  67 +++++++++
+ drivers/thunderbolt/tb.h                |   3 +
+ 5 files changed, 314 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index 771c350..a6e999a 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -241,6 +241,10 @@ struct x1_host {
+ 	bool idle_retire_attempted, idle_retired;
+ 	int idle_retire_error;
+ 	const char *idle_retire_stage;
++	/* Omarchy flavor: retirement after the drive was pulled without Eject. */
++	bool pulled, pulled_retire_attempted, pulled_retired;
++	int pulled_retire_error;
++	const char *pulled_retire_stage;
+ };
+ 
+ static void x1_session_release(struct kref *ref)
+@@ -565,6 +569,9 @@ static int x1_switch_set(struct typec_switch_dev *sw, enum typec_orientation ori
+ 		ret = 0; /* Cache physical state only; never touch the retired HW. */
+ 		goto out;
+ 	}
++	/* Omarchy flavor: a pulled drive must not see another access. */
++	if (x1_general && orientation == TYPEC_ORIENTATION_NONE)
++		qcom_usb4_x1_mark_pulled(host->dev, &host->pcie);
+ 	ret = x1_batch_orientation(host, orientation);
+ 	if (ret)
+ 		goto out;
+@@ -1590,10 +1597,12 @@ static ssize_t general_state_show(struct device *dev, struct device_attribute *a
+ 	if (!mutex_trylock(&host->lifecycle_lock))
+ 		return sysfs_emit(buf, "busy=1 snapshot=unavailable\n");
+ 	len = sysfs_emit(buf,
+-		"busy=0 enabled=%u admitted=%u endpoint_remove_attempted=%u endpoint_removed=%u endpoint_remove_error=%d idle_retire_attempted=%u idle_retired=%u idle_retire_error=%d idle_retire_stage=%s cached=1\n",
++		"busy=0 enabled=%u admitted=%u endpoint_remove_attempted=%u endpoint_removed=%u endpoint_remove_error=%d idle_retire_attempted=%u idle_retired=%u idle_retire_error=%d idle_retire_stage=%s pulled_marked=%u pulled_retire_attempted=%u pulled_retired=%u pulled_retire_error=%d pulled_retire_stage=%s cached=1\n",
+ 		x1_general, p->general, p->endpoint_remove_attempted, p->endpoint_removed,
+ 		p->endpoint_remove_error, host->idle_retire_attempted, host->idle_retired,
+-		host->idle_retire_error, host->idle_retire_stage ?: "none");
++		host->idle_retire_error, host->idle_retire_stage ?: "none", p->pulled,
++		host->pulled_retire_attempted, host->pulled_retired, host->pulled_retire_error,
++		host->pulled_retire_stage ?: "none");
+ 	mutex_unlock(&host->lifecycle_lock);
+ 	return len;
+ }
+@@ -1895,6 +1904,21 @@ fail:
+  * undo its completed stop or retarget these pinned PCI/NVMe objects. This
+  * permits removal of OLD namespace visibility only, never a new connection.
+  */
++/* The retained stop's hardware receipt, or the Omarchy flavor's software stop
++ * of a pulled drive's tunnel, whose host router reset clears the hops.
++ */
++static bool x1_tunnel_stopped(const struct x1_host *host)
++{
++	const struct tb_x1_tunnel_stop *t = &host->tunnel_stop;
++
++	if (!host->tunnel_held || !host->tunnel_stop_complete || host->tunnel_stop_error ||
++	    !t->finished || t->error)
++		return false;
++	if (host->pulled)
++		return x1_general && host->pcie.pulled && !t->adapters && !t->hops;
++	return t->adapters == 2 && t->hops == 4;
++}
++
+ static int x1_namespace_owner_stopped(void *context)
+ {
+ 	struct x1_host *host = context;
+@@ -1906,10 +1930,7 @@ static int x1_namespace_owner_stopped(void *context)
+ 	    !host->pcie.receiver.stop.finished || host->pcie.receiver.stop.error ||
+ 	    host->pcie.receiver.stop.banks_disabled != 8 ||
+ 	    host->pcie.receiver.stop.parents_detached != 8 ||
+-	    !host->tunnel_held || !host->tunnel_stop_complete ||
+-	    host->tunnel_stop_error || !host->tunnel_stop.finished ||
+-	    host->tunnel_stop.error || host->tunnel_stop.adapters != 2 ||
+-	    host->tunnel_stop.hops != 4 || !host->host_stop_attempted ||
++	    !x1_tunnel_stopped(host) || !host->host_stop_attempted ||
+ 	    !host->host_stop.finished || host->host_stop.error ||
+ 	    !host->host_stop.ctl_closed || !host->host_stop.irq_disabled ||
+ 	    !host->host_stop.callbacks_drained || host->host_stop.rings_disabled != 2 ||
+@@ -2412,6 +2433,144 @@ unlock_host:
+ }
+ static DEVICE_ATTR_WO(idle_retire_once);
+ 
++/* The port reported a detach after this session's first cable event. */
++static bool x1_port_pulled(struct x1_host *host)
++{
++	struct x1_port *port = host->port;
++	unsigned long flags;
++	bool pulled;
++
++	spin_lock_irqsave(&port->event_lock, flags);
++	pulled = port->orientation == TYPEC_ORIENTATION_NONE &&
++		 port->disconnect_sequence > host->initial_event_sequence;
++	spin_unlock_irqrestore(&port->event_lock, flags);
++	return pulled;
++}
++
++static int x1_pulled_tunnel_action(void *context)
++{
++	struct x1_host *host = context;
++
++	device_lock_assert(host->dev);
++	lockdep_assert_held(&host->bind_lock);
++	lockdep_assert_held(&host->lifecycle_lock);
++	lockdep_assert_held(&host->lock);
++	lockdep_assert_held(&host->tb->lock);
++	return tb_x1_stop_pcie_pulled(host->tb, host->batch_uid, &host->tunnel_stop);
++}
++
++/* Omarchy flavor: the drive was pulled without Eject. Remove the endpoint as
++ * disconnected, stop the tunnel in software only, then stop the control
++ * rings and reset the router as after an Eject, and run the same retirement.
++ * Nothing reaches the vanished device. Every result is terminal.
++ */
++static ssize_t pulled_retire_once_store(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct x1_host *host __free(x1_session) = x1_session_get(dev);
++	struct qcom_usb4_nhi_stop *s = &host->host_stop;
++	int ret = -EPERM;
++
++	if (!capable(CAP_SYS_ADMIN) || !x1_general || !x1_managed || !x1_tunnel_quiesce ||
++	    !x1_host_quiesce || !x1_power_quiesce || !x1_namespace_retire || !x1_pci_retire ||
++	    !x1_control_retire || !x1_cm_retire || !sysfs_streq(buf, "retire-pulled-v1"))
++		return ret;
++	if (!device_trylock(dev))
++		return -EBUSY;
++	mutex_lock(&host->bind_lock);
++	mutex_lock(&host->lifecycle_lock);
++	mutex_lock(&host->lock);
++	if (host->pulled_retire_attempted) {
++		ret = -EALREADY;
++		goto unlock_host;
++	}
++	/* The connected session an Eject would stop, whose cable is gone. */
++	if (!host->tb || !host->tunnel_held || !rcu_access_pointer(host->retained_tb) ||
++	    !host->cold_owned || !host->ready || host->stopping || host->suspended ||
++	    !host->batch_attempted || !host->batch_terminal || !host->batch_complete ||
++	    host->batch_waiting || host->batch_error || host->error != -ESHUTDOWN ||
++	    !host->command_attempted || !host->connected_command ||
++	    host->tunnel_stop_attempted || host->host_stop_attempted ||
++	    host->power_stop.attempted || !host->pcie.nvme_bound || !x1_port_pulled(host))
++		goto unlock_host;
++	host->pulled_retire_attempted = true;
++	host->pulled = true;
++	host->pulled_retire_stage = "mark-disconnected";
++	qcom_usb4_x1_mark_pulled(dev, &host->pcie);
++	mutex_unlock(&host->lock);
++	/* NVMe removal can wait for its I/O to fail: no Type-C or CM lock here. */
++	host->pulled_retire_stage = "remove-endpoint";
++	ret = host->pcie.endpoint_removed ? 0 : qcom_usb4_x1_pulled_remove(dev, &host->pcie);
++	if (ret)
++		goto done;
++	mutex_lock(&host->lock);
++	mutex_lock(&host->tb->lock);
++	host->pulled_retire_stage = "stop-tunnel";
++	host->tunnel_stop_attempted = true;
++	ret = qcom_usb4_x1_fence_and_quiesce(dev, &host->pcie, x1_pulled_tunnel_action, host);
++	host->tunnel_stop_error = ret;
++	host->tunnel_stop_complete = !ret;
++	if (!ret) {
++		host->pulled_retire_stage = "stop-control";
++		host->host_stop_attempted = true;
++		ret = tb_ctl_stop_x1_retained(host->tb->ctl, &host->qnhi, s);
++		if (!ret && (!s->attempted || !s->ctl_closed || !s->irq_disabled ||
++			     !s->callbacks_drained || s->rings_disabled != 2 ||
++			     s->rx_options || s->tx_options))
++			ret = -EIO;
++		s->error = ret;
++		s->finished = !ret;
++	}
++	if (!ret) {
++		s->stage = "control-stopped-pulled";
++		host->ready = false;
++		host->pulled_retire_stage = "power-stop";
++		ret = x1_power_stop_run(host);
++	}
++	mutex_unlock(&host->tb->lock);
++	mutex_unlock(&host->lock);
++	if (ret)
++		goto done;
++	host->pulled_retire_stage = "retire-namespaces";
++	ret = qcom_usb4_x1_retire_namespaces(dev, &host->pcie, x1_namespace_owner_stopped, host);
++	if (ret)
++		goto done;
++	host->pulled_retire_stage = "retire-pci";
++	ret = qcom_usb4_x1_retire_pci(dev, &host->pcie, x1_namespace_owner_stopped, host);
++	if (ret)
++		goto done;
++	host->pulled_retire_stage = "retire-control";
++	ret = tb_ctl_retire_x1_stopped(host->tb->ctl, &host->qnhi, &host->host_stop,
++				       &host->control_retire, x1_control_owner_stopped, host);
++	if (ret)
++		goto done;
++	host->pulled_retire_stage = "retire-domain";
++	ret = x1_retire_domain(host);
++	if (ret)
++		goto done;
++	host->pulled_retire_stage = "retire-platform";
++	ret = x1_retire_session(host);
++	if (ret)
++		goto done;
++	host->pulled_retired = true;
++	host->pulled_retire_stage = "pulled-retired";
++done:
++	host->pulled_retire_error = ret;
++	dev_info(dev, "general: pulled drive retirement result=%d stage=%s\n", ret,
++		 host->pulled_retire_stage);
++	mutex_unlock(&host->lifecycle_lock);
++	mutex_unlock(&host->bind_lock);
++	device_unlock(dev);
++	return ret ? ret : count;
++unlock_host:
++	mutex_unlock(&host->lock);
++	mutex_unlock(&host->lifecycle_lock);
++	mutex_unlock(&host->bind_lock);
++	device_unlock(dev);
++	return ret;
++}
++static DEVICE_ATTR_WO(pulled_retire_once);
++
+ static ssize_t power_quiesce_once_store(struct device *dev,
+ 		struct device_attribute *attr, const char *buf, size_t count)
+ {
+@@ -2750,7 +2909,7 @@ static struct attribute *x1_attrs[] = {
+ 	&dev_attr_power_quiesce_once.attr, &dev_attr_power_quiesce_state.attr,
+ 	&dev_attr_retire_state.attr,
+ 	&dev_attr_endpoint_remove_once.attr, &dev_attr_general_state.attr,
+-	&dev_attr_idle_retire_once.attr, NULL,
++	&dev_attr_idle_retire_once.attr, &dev_attr_pulled_retire_once.attr, NULL,
+ };
+ ATTRIBUTE_GROUPS(x1);
+ 
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.c b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+index 7ebbc76..ff5a67c 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+@@ -84,6 +84,8 @@ struct x1_pcie_context {
+ 	 * retained; errors latch, and only the one bind call opens DMA/MSI writes.
+ 	 */
+ 	bool config_open, scan_writes, bind_writes;
++	/* Omarchy flavor: set once the cable left; config callbacks answer absent. */
++	bool pulled;
+ };
+ 
+ static DEFINE_MUTEX(x1_pcie_lock);
+@@ -1322,6 +1324,10 @@ static int x1_pcie_config_read(struct pci_bus *bus, unsigned int devfn,
+ 		ret = PCIBIOS_DEVICE_NOT_FOUND; /* Expected absent-slot scan, no MMIO. */
+ 		goto out;
+ 	}
++	if (READ_ONCE(ctx->pulled)) {
++		ret = PCIBIOS_DEVICE_NOT_FOUND; /* Pulled: nothing may reach the tunnel. */
++		goto out;
++	}
+ 	ret = x1_pcie_host_local(ctx);
+ 	if (ret) {
+ 		if (!READ_ONCE(ctx->state->cfg_error)) {
+@@ -1357,7 +1363,7 @@ static int x1_pcie_config_write(struct pci_bus *bus, unsigned int devfn,
+ 	raw_spin_lock_irqsave(&x1_config_lock, flags);
+ 	ctx = x1_pcie;
+ 	base = x1_pcie_config_base(bus, devfn);
+-	if (!base) {
++	if (!base || READ_ONCE(ctx->pulled)) {
+ 		ret = PCIBIOS_DEVICE_NOT_FOUND;
+ 		goto out;
+ 	}
+@@ -1402,7 +1408,7 @@ static int x1_pcie_enable_device(struct pci_host_bridge *bridge, struct pci_dev
+ 	raw_spin_lock_irqsave(&x1_config_lock, flags);
+ 	ctx = x1_pcie;
+ 	if (!ctx || bridge != ctx->bridge || !READ_ONCE(ctx->bind_writes) ||
+-	    !READ_ONCE(ctx->state->host_prepared) ||
++	    !READ_ONCE(ctx->state->host_prepared) || READ_ONCE(ctx->pulled) ||
+ 	    (dev != ctx->root_port && dev != ctx->endpoint))
+ 		goto out;
+ 	ret = x1_pcie_host_local(ctx);
+@@ -1731,6 +1737,67 @@ out:
+ 	return ret;
+ }
+ 
++void qcom_usb4_x1_mark_pulled(struct device *owner, struct x1_pcie_state *state)
++{
++	struct x1_pcie_context *ctx;
++	unsigned long flags;
++
++	raw_spin_lock_irqsave(&x1_config_lock, flags);
++	ctx = x1_pcie;
++	if (ctx && owner && ctx->owner == owner && ctx->state == state && state->general &&
++	    ctx->endpoint && !state->pci_retire_attempted) {
++		WRITE_ONCE(ctx->pulled, true);
++		/* pci_dev_set_disconnected() is PCI-core internal; this is its
++		 * terminal state, which pci_dev_is_disconnected() reads.
++		 */
++		xchg(&ctx->endpoint->error_state, pci_channel_io_perm_failure);
++		state->pulled = true;
++	}
++	raw_spin_unlock_irqrestore(&x1_config_lock, flags);
++}
++
++int qcom_usb4_x1_pulled_remove(struct device *owner, struct x1_pcie_state *state)
++{
++	struct x1_pcie_context *ctx;
++	struct pci_dev *ep;
++	int ret = -EPERM;
++
++	if (!owner || !state)
++		return -EINVAL;
++	mutex_lock(&x1_pcie_lock);
++	ctx = x1_pcie;
++	if (!ctx || ctx->owner != owner || ctx->state != state || !state->general ||
++	    !state->pulled || !READ_ONCE(ctx->pulled) || !state->nvme_requested ||
++	    !state->host_prepared || !state->host_published || !state->nvme_bound ||
++	    !state->nvme_bind_attempted || state->error || state->host_error ||
++	    READ_ONCE(state->cfg_error) || state->config_fenced || ctx->batch_active ||
++	    !ctx->endpoint || !pci_dev_is_disconnected(ctx->endpoint) || !ctx->root_port ||
++	    !ctx->receiver_retained || !state->receiver.ready)
++		goto out;
++	if (state->endpoint_remove_attempted) {
++		ret = -EALREADY;
++		goto out;
++	}
++	state->endpoint_remove_attempted = true;
++	state->host_step = "pulled-endpoint-removal";
++	ep = ctx->endpoint;
++	/* Disconnected: NVMe fails its I/O and skips every register access. */
++	pci_lock_rescan_remove();
++	pci_stop_and_remove_bus_device(ep);
++	pci_unlock_rescan_remove();
++	ret = ep->dev.driver || pci_get_drvdata(ep) || ep->dev.msi.data ||
++	      device_is_registered(&ep->dev) ? -EIO : 0;
++	state->endpoint_remove_error = ret;
++	state->endpoint_removed = !ret;
++	if (ret)
++		WRITE_ONCE(state->error, ret);
++	else
++		state->host_step = "pulled-endpoint-removed";
++out:
++	mutex_unlock(&x1_pcie_lock);
++	return ret;
++}
++
+ struct x1_pcie_fenced_action {
+ 	struct x1_pcie_context *pcie;
+ 	int (*action)(void *);
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.h b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+index 6885b6f..03c959f 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.h
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+@@ -47,6 +47,8 @@ struct x1_pcie_state {
+ 	 */
+ 	bool general, endpoint_remove_attempted, endpoint_removed;
+ 	int endpoint_remove_error;
++	/* Omarchy flavor: the cable left while the endpoint was published. */
++	bool pulled;
+ 	/* Monotonic admission fence, serialized with every PCI config callback.
+ 	 * A closed fence is not proof that DMA/IRQs or object lifetimes ended.
+ 	 */
+@@ -102,6 +104,13 @@ int qcom_usb4_x1_nvme_bind(struct device *owner, struct x1_pcie_state *state);
+  */
+ int qcom_usb4_x1_general_remove(struct device *owner, struct x1_pcie_state *state);
+ 
++/* Omarchy flavor, from the Type-C detach callback onward: no config access or
++ * endpoint MMIO may reach the pulled device. Raw lock only, idempotent.
++ */
++void qcom_usb4_x1_mark_pulled(struct device *owner, struct x1_pcie_state *state);
++/* Normal PCI removal of the pulled endpoint; caller locks as for general removal. */
++int qcom_usb4_x1_pulled_remove(struct device *owner, struct x1_pcie_state *state);
++
+ /* After kernel-owned endpoint-quiesce proof, retire endpoint IRQs while
+  * hardware is live, close and synchronize ALL PCI configuration callbacks,
+  * then stop receiver IRQs before the retained-only tunnel-stop action.
+diff --git a/drivers/thunderbolt/tb.c b/drivers/thunderbolt/tb.c
+index d455f42..a3d4037 100644
+--- a/drivers/thunderbolt/tb.c
++++ b/drivers/thunderbolt/tb.c
+@@ -4204,6 +4204,73 @@ fail:
+ 	return receipt->error;
+ }
+ 
++/**
++ * tb_x1_stop_pcie_pulled() - Retire the held tunnel of a pulled device
++ * @tb: Same retained private domain
++ * @expected_uid: Same approved identity
++ * @receipt: Pristine caller-owned cached evidence, retained after return
++ *
++ * Omarchy flavor. The device router left with the cable, so no control
++ * request can reach it, and the frontend resets this host router next, which
++ * clears its own hops. Only software state changes: the pinned tunnel becomes
++ * inactive as after tb_x1_stop_pcie_retained(), so the unchanged CM
++ * retirement applies. The pull changed the live generation; this checks the
++ * pinned tree instead. Caller holds the same locks as the retained stop.
++ */
++int tb_x1_stop_pcie_pulled(struct tb *tb, u64 expected_uid,
++			   struct tb_x1_tunnel_stop *receipt)
++{
++	struct tb_port *up, *down;
++	struct tb_tunnel *tunnel;
++	struct tb_cm *tcm;
++	int ret;
++
++	if (!tb || !expected_uid || !receipt)
++		return -EINVAL;
++	ret = tb_x1_pcie_owner(tb);
++	if (ret)
++		return ret;
++	tcm = tb_priv(tb);
++	if (tcm->x1_stop_attempted)
++		return -EALREADY;
++	if (receipt->attempted || receipt->finished || receipt->error ||
++	    receipt->check_live || receipt->context)
++		return -EINVAL;
++	tcm->x1_stop_attempted = true;
++	receipt->attempted = true;
++	receipt->stage = "pulled-pinned-identity";
++	tunnel = tcm->x1_held_tunnel;
++	ret = -ENODEV;
++	if (!tb_x1_retained_mode(tb) || !tcm->x1_hold_attempted || !tcm->x1_hold_ready ||
++	    !tunnel || !tcm->x1_held_switch || tb->root_switch != tcm->x1_held_root ||
++	    tcm->x1_pcie_uid != expected_uid || tcm->x1_held_switch->uid != expected_uid ||
++	    tcm->x1_held_switch != tcm->x1_pcie_switch || tunnel != tcm->x1_pcie_tunnel ||
++	    !tb_x1_pcie_topology(tb, tcm->x1_held_switch, true))
++		goto fail;
++	ret = tb_x1_pcie_adapters(tb, tcm->x1_held_switch, &up, &down);
++	if (ret)
++		goto fail;
++	ret = -EIO;
++	if (up != tcm->x1_held_up || down != tcm->x1_held_down ||
++	    !tb_tunnel_is_pci(tunnel) || tunnel->state != TB_TUNNEL_ACTIVE ||
++	    tunnel->src_port != down || tunnel->dst_port != up || tunnel->npaths != 2 ||
++	    tunnel->paths[0] != tcm->x1_held_paths[0] ||
++	    tunnel->paths[1] != tcm->x1_held_paths[1] ||
++	    !tunnel->paths[0]->activated || !tunnel->paths[1]->activated)
++		goto fail;
++	tunnel->paths[0]->activated = false;
++	tunnel->paths[1]->activated = false;
++	tunnel->state = TB_TUNNEL_INACTIVE;
++	tcm->x1_held_switch->authorized = 0;
++	tcm->x1_stop_complete = true;
++	receipt->finished = true;
++	receipt->stage = "pulled-inactive-host-reset-pending";
++	return 0;
++fail:
++	receipt->error = ret;
++	return ret;
++}
++
+ /* No control transfer or endpoint access: valid even after control-ring stop.
+  * Caller holds the same frontend/lifecycle/TB locks as retained tunnel stop.
+  */
+diff --git a/drivers/thunderbolt/tb.h b/drivers/thunderbolt/tb.h
+index 9f8e870..06d7ff9 100644
+--- a/drivers/thunderbolt/tb.h
++++ b/drivers/thunderbolt/tb.h
+@@ -771,6 +771,9 @@ unsigned int tb_x1_events_pending(struct tb *tb);
+ int tb_x1_idle_freeze(struct tb *tb);
+ int tb_x1_stop_pcie_retained(struct tb *tb, u64 expected_uid,
+ 			     struct tb_x1_tunnel_stop *receipt);
++/* Omarchy flavor: software-only stop of the held tunnel after a pull. */
++int tb_x1_stop_pcie_pulled(struct tb *tb, u64 expected_uid,
++			   struct tb_x1_tunnel_stop *receipt);
+ int tb_x1_pcie_stopped(struct tb *tb, u64 expected_uid);
+ /* Non-sleeping: call before AND after acquiring a potentially contended lock. */
+ void tb_x1_invalidate_pcie(struct tb *tb);

@@ -1,0 +1,783 @@
+From e930247ab3821d7b3d71a1ca52c023763d9ea742 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 04:34:50 +0200
+Subject: [PATCH 07/10] Omarchy flavor: power an idle router down before system
+ sleep, and let a fully retired session suspend
+
+---
+ drivers/thunderbolt/ctl.c               |  13 +
+ drivers/thunderbolt/ctl.h               |   1 +
+ drivers/thunderbolt/qcom-usb4-x1-host.c | 378 +++++++++++++++++++++++-
+ drivers/thunderbolt/qcom-usb4-x1-pcie.c |  82 +++++
+ drivers/thunderbolt/qcom-usb4-x1-pcie.h |   3 +
+ drivers/thunderbolt/tb.c                | 152 ++++++++++
+ drivers/thunderbolt/tb.h                |   4 +
+ 7 files changed, 627 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/thunderbolt/ctl.c b/drivers/thunderbolt/ctl.c
+index 93236fb..8f4b8f4 100644
+--- a/drivers/thunderbolt/ctl.c
++++ b/drivers/thunderbolt/ctl.c
+@@ -916,6 +916,19 @@ bool tb_ctl_x1_retired(struct tb_ctl *ctl, struct tb_nhi *nhi)
+ {
+ 	return ctl && ctl->nhi == nhi && smp_load_acquire(&ctl->x1_retired);
+ }
++
++/* Omarchy flavor: running with no request in flight, before the checked stop. */
++bool tb_ctl_x1_idle(struct tb_ctl *ctl)
++{
++	bool idle;
++
++	if (!ctl)
++		return false;
++	mutex_lock(&ctl->request_queue_lock);
++	idle = ctl->running && !ctl->x1_stop_attempted && list_empty(&ctl->request_queue);
++	mutex_unlock(&ctl->request_queue_lock);
++	return idle;
++}
+ #endif
+ 
+ /* public interface, commands */
+diff --git a/drivers/thunderbolt/ctl.h b/drivers/thunderbolt/ctl.h
+index ffa6eca..d7d176e 100644
+--- a/drivers/thunderbolt/ctl.h
++++ b/drivers/thunderbolt/ctl.h
+@@ -37,6 +37,7 @@ int tb_ctl_retire_x1_stopped(struct tb_ctl *ctl, struct qcom_usb4_nhi *qnhi,
+ 		struct qcom_usb4_nhi_retire *receipt,
+ 		int (*check_stopped)(void *), void *context);
+ bool tb_ctl_x1_retired(struct tb_ctl *ctl, struct tb_nhi *nhi);
++bool tb_ctl_x1_idle(struct tb_ctl *ctl);
+ #endif
+ 
+ /* configuration commands */
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index 7fe5423..771c350 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -237,6 +237,10 @@ struct x1_host {
+ 	bool domain_unregistered;
+ 	bool domain_retired;
+ 	int domain_retire_error;
++	/* Omarchy flavor: power-down of a prepared router that never connected. */
++	bool idle_retire_attempted, idle_retired;
++	int idle_retire_error;
++	const char *idle_retire_stage;
+ };
+ 
+ static void x1_session_release(struct kref *ref)
+@@ -1586,9 +1590,10 @@ static ssize_t general_state_show(struct device *dev, struct device_attribute *a
+ 	if (!mutex_trylock(&host->lifecycle_lock))
+ 		return sysfs_emit(buf, "busy=1 snapshot=unavailable\n");
+ 	len = sysfs_emit(buf,
+-		"busy=0 enabled=%u admitted=%u endpoint_remove_attempted=%u endpoint_removed=%u endpoint_remove_error=%d cached=1\n",
++		"busy=0 enabled=%u admitted=%u endpoint_remove_attempted=%u endpoint_removed=%u endpoint_remove_error=%d idle_retire_attempted=%u idle_retired=%u idle_retire_error=%d idle_retire_stage=%s cached=1\n",
+ 		x1_general, p->general, p->endpoint_remove_attempted, p->endpoint_removed,
+-		p->endpoint_remove_error);
++		p->endpoint_remove_error, host->idle_retire_attempted, host->idle_retired,
++		host->idle_retire_error, host->idle_retire_stage ?: "none");
+ 	mutex_unlock(&host->lifecycle_lock);
+ 	return len;
+ }
+@@ -2051,6 +2056,362 @@ static int x1_retire_session(struct x1_host *host)
+ 	return 0;
+ }
+ 
++/* Omarchy flavor: the router never sent a connect command, so no tunnel, PCI
++ * bus or receiver exists; only its control rings and PCIe0 preparation do.
++ */
++static bool x1_idle_session(const struct x1_host *host)
++{
++	return x1_general && host->idle_retire_attempted && host->cold_owned &&
++	       host->activated && !host->command_attempted && !host->connected_command &&
++	       !host->tunnel_held && !host->tunnel_stop_attempted &&
++	       !host->training.attempted && !host->inventory.attempted &&
++	       !host->pcie.inventory_attempted && !host->pcie.host_attempted;
++}
++
++/* Same hardware sequence as x1_power_stop_run(), entered after an idle control
++ * ring stop instead of a tunnel and host stop. Caller holds the idle retire's
++ * device, bind, lifecycle, Type-C and domain locks.
++ */
++static int x1_idle_power_stop_run(struct x1_host *host)
++{
++	struct x1_power_stop *s = &host->power_stop;
++	u32 route;
++	unsigned int i;
++	int ret;
++
++	if (s->attempted)
++		return -EALREADY;
++	if (!x1_idle_session(host) || host->ready || !host->stopping ||
++	    host->suspended || !host->gcc || !host->clocks_on || !host->runtime_held ||
++	    !host->phy_on || !host->phy_initialized || !host->host_stop_attempted ||
++	    !host->host_stop.finished || host->host_stop.error ||
++	    !host->host_stop.ctl_closed || !host->host_stop.irq_disabled ||
++	    !host->host_stop.callbacks_drained || host->host_stop.rings_disabled != 2 ||
++	    host->host_stop.rx_options || host->host_stop.tx_options ||
++	    !host->qnhi.retained_stop_attempted || !host->qnhi.retained_irq_disabled ||
++	    host->qnhi.accept_rearm || host->mcu.control_offset != 0x22000 ||
++	    host->mcu.base != host->router)
++		return -EPERM;
++	s->attempted = true;
++	s->stage = "reset-baseline";
++	ret = x1_gcc_usb4_reset_state(host->gcc, &s->reset_requests);
++	if (ret || s->reset_requests) {
++		ret = ret ?: -EIO;
++		goto fail;
++	}
++	s->stage = "mcu-stop-request";
++	qcom_usb4_mcu_stop(&host->mcu);
++	s->mcu_control = readl(host->router + 0x22000);
++	s->host_control = readl(host->router + 0x8018);
++	if ((s->mcu_control & BIT(0)) || (s->host_control & BIT(24))) {
++		ret = -EIO;
++		goto fail;
++	}
++	s->mcu_request_cleared = true;
++	s->stage = "router-reset";
++	for (i = 0; i < ARRAY_SIZE(host->resets); i++) {
++		ret = reset_control_assert(host->resets[i].rstc);
++		if (ret)
++			goto fail;
++		s->resets_asserted++;
++	}
++	usleep_range(100, 120);
++	ret = x1_gcc_usb4_reset_state(host->gcc, &s->reset_requests);
++	if (ret || s->reset_requests != GENMASK(10, 0)) {
++		ret = ret ?: -EIO;
++		goto fail;
++	}
++	s->stage = "rx-reference";
++	ret = x1_gcc_usb4_rx_select(host->gcc, false);
++	if (ret)
++		goto fail;
++	s->rx_reference = true;
++	s->stage = "phy-power-off";
++	ret = phy_power_off(host->phy);
++	if (ret)
++		goto fail;
++	host->phy_on = false;
++	s->phy_off = true;
++	s->stage = "phy-exit";
++	ret = phy_exit(host->phy);
++	if (ret)
++		goto fail;
++	host->phy_initialized = false;
++	s->phy_exited = true;
++	s->stage = "route-clear";
++	ret = regmap_update_bits(host->tcsr, 0x1b000, BIT(0), 0);
++	if (!ret)
++		ret = regmap_read(host->tcsr, 0x1b000, &route);
++	if (ret || (route & BIT(0))) {
++		ret = ret ?: -EIO;
++		goto fail;
++	}
++	s->route_cleared = true;
++	s->stage = "memory-force-clear";
++	ret = x1_gcc_usb4_sys_force_mem(host->gcc, false);
++	if (ret)
++		goto fail;
++	s->memory_force_cleared = true;
++	s->stage = "icc-votes-release";
++	ret = icc_set_bw(host->apps, 0, 0);
++	if (!ret)
++		ret = icc_set_bw(host->ddr, 0, 0);
++	if (ret)
++		goto fail;
++	s->icc_released = true;
++	s->stage = "clock-votes-release";
++	x1_gcc_usb4_put(host->gcc);
++	host->gcc = NULL;
++	s->gcc_released = true;
++	clk_bulk_disable_unprepare(ARRAY_SIZE(host->clocks), host->clocks);
++	host->clocks_on = false;
++	s->clocks_released = true;
++	s->stage = "runtime-vote-release";
++	ret = pm_runtime_put_sync(host->dev);
++	host->runtime_held = false;
++	s->runtime_released = true;
++	if (ret < 0)
++		goto fail;
++	s->stage = "provider-votes-released-idle";
++	s->finished = true;
++	return 0;
++fail:
++	s->error = ret;
++	return ret;
++}
++
++/* Kernel-owned idle stop receipts, as x1_namespace_owner_stopped() checks the
++ * tunnel path. Caller holds lifecycle_lock; no lock or hardware access here.
++ */
++static int x1_idle_owner_stopped(void *context)
++{
++	struct x1_host *host = context;
++	const struct x1_power_stop *s = &host->power_stop;
++
++	lockdep_assert_held(&host->lifecycle_lock);
++	if (!x1_idle_session(host) || !host->stopping || host->ready || host->suspended ||
++	    !host->host_stop_attempted || !host->host_stop.finished || host->host_stop.error ||
++	    !host->host_stop.ctl_closed || !host->host_stop.irq_disabled ||
++	    !host->host_stop.callbacks_drained || host->host_stop.rings_disabled != 2 ||
++	    host->host_stop.rx_options || host->host_stop.tx_options ||
++	    !host->qnhi.retained_stop_attempted || !host->qnhi.retained_irq_disabled ||
++	    host->qnhi.accept_rearm || !s->attempted || !s->finished || s->error ||
++	    !s->mcu_request_cleared || s->resets_asserted != ARRAY_SIZE(host->resets) ||
++	    s->reset_requests != GENMASK(10, 0) || !s->rx_reference || !s->phy_off ||
++	    !s->phy_exited || !s->route_cleared || !s->memory_force_cleared ||
++	    !s->icc_released || !s->gcc_released || !s->clocks_released ||
++	    !s->runtime_released || host->gcc || host->clocks_on || host->phy_on ||
++	    host->phy_initialized || host->runtime_held)
++		return -EPERM;
++	return 0;
++}
++
++static int x1_idle_cm_owner_stopped(void *context)
++{
++	struct x1_host *host = context;
++	const struct qcom_usb4_nhi_retire *c = &host->control_retire;
++	int ret = x1_idle_owner_stopped(context);
++
++	if (ret)
++		return ret;
++	if (!host->tb || !host->tb->ctl || rcu_access_pointer(host->retained_tb) ||
++	    !c->attempted || !c->finished || c->error || !c->irq_released ||
++	    !c->rings_detached || c->rings_freed != 2 || c->packets_freed != 10 ||
++	    !c->pool_released || !host->qnhi.released || host->qnhi.irq_requested ||
++	    !host->qnhi.nhi.going_away || !tb_ctl_x1_retired(host->tb->ctl, &host->qnhi.nhi))
++		return -EPERM;
++	return 0;
++}
++
++static int x1_idle_platform_owner_stopped(void *context)
++{
++	struct x1_host *host = context;
++	int ret = x1_idle_owner_stopped(host);
++
++	if (ret)
++		return ret;
++	if (!host->domain_retired || host->domain_retire_error ||
++	    !host->domain_unregistered || !host->domain_unpublished ||
++	    host->tb || rcu_access_pointer(host->retained_tb) ||
++	    !host->cm_retire.finished || host->cm_retire.error ||
++	    !host->control_retire.finished || host->control_retire.error ||
++	    !host->qnhi.released || host->qnhi.irq_requested ||
++	    host->qnhi.accept_rearm || !host->qnhi.nhi.going_away)
++		return -EPERM;
++	return 0;
++}
++
++/* Idle counterpart of x1_retire_domain(): no CM hold, so no extra reference. */
++static int x1_idle_retire_domain(struct x1_host *host)
++{
++	struct tb *tb;
++	int ret;
++
++	lockdep_assert_held(&host->lifecycle_lock);
++	if (host->domain_retire_attempted)
++		return -EALREADY;
++	ret = x1_idle_cm_owner_stopped(host);
++	if (ret)
++		return ret;
++	host->domain_retire_attempted = true;
++	tb = host->tb;
++	ret = tb_x1_idle_retire_cm(tb, &host->cm_retire, x1_idle_cm_owner_stopped, host);
++	if (ret)
++		goto fail;
++	mutex_lock(&host->lock);
++	if (host->tb != tb) {
++		mutex_unlock(&host->lock);
++		ret = -ESTALE;
++		goto fail;
++	}
++	host->tb = NULL;
++	host->domain_unpublished = true;
++	mutex_unlock(&host->lock);
++	synchronize_rcu();
++	tb_domain_remove(tb);
++	host->domain_unregistered = true;
++	if (!wait_for_completion_timeout(&host->qnhi.nhi.domain_released,
++					 msecs_to_jiffies(5000))) {
++		ret = -ETIMEDOUT;
++		goto fail;
++	}
++	host->domain_retired = true;
++	return 0;
++fail:
++	host->domain_retire_error = ret;
++	return ret;
++}
++
++/* Omarchy flavor: let queued CM events and control requests finish, then
++ * freeze the empty domain. Caller holds the Type-C and domain locks; the
++ * domain lock is dropped while waiting. On failure nothing is frozen.
++ */
++static int x1_idle_freeze_cm(struct x1_host *host)
++{
++	unsigned long deadline = jiffies + 3 * HZ;
++	int ret;
++
++	lockdep_assert_held(&host->tb->lock);
++	for (;;) {
++		ret = -EBUSY;
++		if (!tb_x1_events_pending(host->tb) && tb_ctl_x1_idle(host->tb->ctl))
++			ret = tb_x1_idle_freeze(host->tb);
++		if (ret != -EBUSY || time_after(jiffies, deadline))
++			return ret;
++		mutex_unlock(&host->tb->lock);
++		msleep(20);
++		mutex_lock(&host->tb->lock);
++	}
++}
++
++/* Omarchy flavor, before system sleep: power down a prepared router that never
++ * connected, in the tunnel path's order. Control rings stop while DMA stays
++ * owned, the router resets and releases its providers, and only then are ring
++ * DMA, the domain and the PCIe0 preparation released. A refused freeze keeps
++ * the session; any failure after it is terminal.
++ */
++static ssize_t idle_retire_once_store(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct x1_host *host __free(x1_session) = x1_session_get(dev);
++	struct qcom_usb4_nhi_stop *s = &host->host_stop;
++	struct tb_nhi *nhi = &host->qnhi.nhi;
++	int ret = -EPERM;
++
++	if (!capable(CAP_SYS_ADMIN) || !x1_general || !x1_managed || !x1_host_quiesce ||
++	    !x1_power_quiesce || !x1_control_retire || !x1_cm_retire ||
++	    !sysfs_streq(buf, "retire-idle-v1"))
++		return ret;
++	if (!device_trylock(dev))
++		return -EBUSY;
++	mutex_lock(&host->bind_lock);
++	mutex_lock(&host->lifecycle_lock);
++	mutex_lock(&host->lock);
++	if (host->idle_retire_attempted) {
++		ret = -EALREADY;
++		goto unlock_host;
++	}
++	if (!host->tb || !host->activated || !host->cold_owned || !host->ready ||
++	    host->stopping || host->suspended || host->error || !host->batch_attempted ||
++	    !host->batch_waiting || host->batch_terminal || host->command_attempted ||
++	    host->connected_command || host->pending_command || host->batch_switch ||
++	    host->tunnel_held || host->training.attempted || host->inventory.attempted ||
++	    !host->pcie.prepared || host->pcie.error || host->pcie.inventory_attempted ||
++	    host->pcie.host_attempted || host->host_stop_attempted)
++		goto unlock_host;
++	mutex_lock(&host->tb->lock);
++	ret = x1_idle_freeze_cm(host);
++	if (ret) {
++		mutex_unlock(&host->tb->lock);
++		host->idle_retire_error = ret;
++		host->idle_retire_stage = "refused-session-kept";
++		dev_info(dev, "general: idle power-down refused result=%d\n", ret);
++		goto unlock_host;
++	}
++	/* From here every result is terminal; Type-C callbacks only cache state. */
++	host->idle_retire_attempted = true;
++	host->stopping = true;
++	host->ready = false;
++	host->batch_waiting = false;
++	host->batch_terminal = true;
++	host->error = -ESHUTDOWN;
++	host->batch_step = "idle-power-down";
++	host->idle_retire_stage = "stop-control";
++	host->host_stop_attempted = true;
++	ret = tb_ctl_stop_x1_retained(host->tb->ctl, &host->qnhi, s);
++	if (!ret && (!s->attempted || !s->ctl_closed || !s->irq_disabled ||
++		     !s->callbacks_drained || s->rings_disabled != 2 ||
++		     s->rx_options || s->tx_options))
++		ret = -EIO;
++	s->error = ret;
++	s->finished = !ret;
++	if (!ret) {
++		s->stage = "control-stopped-idle";
++		host->idle_retire_stage = "power-stop";
++		ret = x1_idle_power_stop_run(host);
++	}
++	mutex_unlock(&host->tb->lock);
++	mutex_unlock(&host->lock);
++	if (ret)
++		goto done;
++	host->idle_retire_stage = "control-retire";
++	ret = tb_ctl_retire_x1_stopped(host->tb->ctl, &host->qnhi, &host->host_stop,
++				       &host->control_retire, x1_idle_owner_stopped, host);
++	if (ret)
++		goto done;
++	host->idle_retire_stage = "domain-retire";
++	ret = x1_idle_retire_domain(host);
++	if (ret)
++		goto done;
++	host->idle_retire_stage = "platform-retire";
++	ret = qcom_usb4_x1_idle_retire_platform(dev, &host->pcie,
++						x1_idle_platform_owner_stopped, host);
++	if (ret)
++		goto done;
++	devm_kfree(host->dev, nhi->tx_rings);
++	devm_kfree(host->dev, nhi->rx_rings);
++	nhi->tx_rings = NULL;
++	nhi->rx_rings = NULL;
++	mutex_destroy(&host->qnhi.ownership_lock);
++	host->idle_retired = true;
++	host->fully_retired = true;
++	host->idle_retire_stage = "idle-retired";
++done:
++	host->idle_retire_error = ret;
++	dev_info(dev, "general: idle power-down result=%d stage=%s\n", ret, host->idle_retire_stage);
++	mutex_unlock(&host->lifecycle_lock);
++	mutex_unlock(&host->bind_lock);
++	device_unlock(dev);
++	return ret ? ret : count;
++unlock_host:
++	mutex_unlock(&host->lock);
++	mutex_unlock(&host->lifecycle_lock);
++	mutex_unlock(&host->bind_lock);
++	device_unlock(dev);
++	return ret;
++}
++static DEVICE_ATTR_WO(idle_retire_once);
++
+ static ssize_t power_quiesce_once_store(struct device *dev,
+ 		struct device_attribute *attr, const char *buf, size_t count)
+ {
+@@ -2339,7 +2700,9 @@ static ssize_t renew_session_store(struct device *dev,
+ 	ret = -EPERM;
+ 	if (rcu_access_pointer(port->session) != old || generation != old->generation ||
+ 	    !old->fully_retired || !old->pcie.platform_retired ||
+-	    old->pcie.platform_retire_error || x1_platform_owner_stopped(old) ||
++	    old->pcie.platform_retire_error ||
++	    (old->idle_retired ? x1_idle_platform_owner_stopped(old) :
++				 x1_platform_owner_stopped(old)) ||
+ 	    port->next_generation == U64_MAX)
+ 		goto out;
+ 	next = x1_session_alloc(port);
+@@ -2349,8 +2712,9 @@ static ssize_t renew_session_store(struct device *dev,
+ 	}
+ 	x1_session_providers(next, old);
+ 	spin_lock_irqsave(&port->event_lock, flags);
++	/* An idle power-down consumed no attachment, so it needs no detach. */
+ 	if (port->orientation != TYPEC_ORIENTATION_NONE ||
+-	    port->disconnect_sequence <= old->initial_event_sequence) {
++	    (!old->idle_retired && port->disconnect_sequence <= old->initial_event_sequence)) {
+ 		ret = -EBUSY;
+ 	} else {
+ 		next->initial_event_sequence = port->event_sequence;
+@@ -2385,7 +2749,8 @@ static struct attribute *x1_attrs[] = {
+ 	&dev_attr_host_quiesce_once.attr, &dev_attr_host_quiesce_state.attr,
+ 	&dev_attr_power_quiesce_once.attr, &dev_attr_power_quiesce_state.attr,
+ 	&dev_attr_retire_state.attr,
+-	&dev_attr_endpoint_remove_once.attr, &dev_attr_general_state.attr, NULL,
++	&dev_attr_endpoint_remove_once.attr, &dev_attr_general_state.attr,
++	&dev_attr_idle_retire_once.attr, NULL,
+ };
+ ATTRIBUTE_GROUPS(x1);
+ 
+@@ -2523,7 +2888,8 @@ static int x1_suspend(struct device *dev)
+ 	int ret;
+ 
+ 	mutex_lock(&host->lifecycle_lock);
+-	ret = host->startup_attempted ? -EBUSY : 0;
++	/* Omarchy flavor: a fully retired session holds no hardware or providers. */
++	ret = host->startup_attempted && !(x1_general && host->fully_retired) ? -EBUSY : 0;
+ 	if (!ret)
+ 		host->suspended = true;
+ 	mutex_unlock(&host->lifecycle_lock);
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.c b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+index 2c77ac1..7ebbc76 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+@@ -2074,6 +2074,88 @@ out:
+ 	return ret;
+ }
+ 
++/* Omarchy flavor: release a PCIe0 preparation that never trained, allocated a
++ * bridge or receiver, or took the receiver's module pin. Same provider order
++ * as qcom_usb4_x1_retire_platform(); the tunnel BCR stays asserted for the
++ * next generation's preparation.
++ */
++int qcom_usb4_x1_idle_retire_platform(struct device *owner, struct x1_pcie_state *state,
++				      int (*check_stopped)(void *), void *context)
++{
++	struct x1_pcie_context *ctx;
++	unsigned long flags;
++	unsigned int i;
++	int ret = -EPERM;
++
++	if (!owner || !state || !check_stopped)
++		return -EINVAL;
++	mutex_lock(&x1_pcie_lock);
++	ctx = x1_pcie;
++	if (!ctx || ctx->owner != owner || ctx->state != state || !state->general ||
++	    !state->prepared || state->error || state->inventory_attempted ||
++	    state->host_attempted || state->bridge_allocated || state->nvme_bind_attempted ||
++	    ctx->bridge || ctx->receiver || ctx->receiver_retained ||
++	    READ_ONCE(ctx->config_open) || READ_ONCE(ctx->scan_writes) ||
++	    READ_ONCE(ctx->bind_writes) || ctx->batch_active || ctx->window ||
++	    ctx->endpoint || ctx->root_port || ctx->nvme_session ||
++	    !ctx->driver_registered || !ctx->runtime_enabled || !ctx->runtime_held ||
++	    ctx->clocks_enabled != ARRAY_SIZE(ctx->clocks) ||
++	    ctx->pdev->dev.driver != &x1_pcie_driver.driver)
++		goto out;
++	if (state->platform_retire_attempted) {
++		ret = -EALREADY;
++		goto out;
++	}
++	ret = check_stopped(context);
++	if (ret)
++		goto out;
++	state->platform_retire_attempted = true;
++	ret = reset_control_assert(ctx->reset);
++	if (ret)
++		goto failed;
++	state->platform_reset = true;
++	x1_pcie_reset_held = true;
++	ret = icc_set_bw(ctx->cfg, 0, 0);
++	if (!ret)
++		ret = icc_set_bw(ctx->mem, 0, 0);
++	if (ret)
++		goto failed;
++	state->platform_icc_released = true;
++	for (i = ARRAY_SIZE(ctx->clocks); i; i--) {
++		clk_disable_unprepare(ctx->clocks[i - 1]);
++		ctx->clocks_enabled--;
++		state->platform_clocks_released++;
++	}
++	pm_runtime_allow(&ctx->pdev->dev);
++	ret = pm_runtime_put_sync(&ctx->pdev->dev);
++	ctx->runtime_held = false;
++	if (ret < 0)
++		goto failed;
++	pm_runtime_barrier(&ctx->pdev->dev);
++	pm_runtime_disable(&ctx->pdev->dev);
++	ctx->runtime_enabled = false;
++	/* The owner's runtime PM was only forbidden by the receiver stage. */
++	state->platform_runtime_released = true;
++	raw_spin_lock_irqsave(&x1_config_lock, flags);
++	x1_pcie = NULL;
++	raw_spin_unlock_irqrestore(&x1_config_lock, flags);
++	platform_driver_unregister(&x1_pcie_driver);
++	if (ctx->reset_early)
++		reset_control_put(ctx->reset); /* Held asserted; put never deasserts. */
++	state->platform_retired = true;
++	state->host_step = "idle-platform-provider-context-retired";
++	put_device(&ctx->pdev->dev);
++	put_device(ctx->owner);
++	kfree(ctx);
++	ret = 0;
++	goto out;
++failed:
++	state->platform_retire_error = ret;
++out:
++	mutex_unlock(&x1_pcie_lock);
++	return ret;
++}
++
+ int qcom_usb4_x1_batch_inventory(struct device *owner, struct x1_pcie_state *state,
+ 		int (*check_live)(void *), void *context, u16 vendor, u16 device,
+ 		struct x1_train_state *training, struct x1_pcie_inventory *inventory)
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.h b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+index a7a26a6..6885b6f 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.h
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+@@ -133,5 +133,8 @@ int qcom_usb4_x1_retire_pci(struct device *owner, struct x1_pcie_state *state,
+ /* Final exact-owner provider/context retirement, after domain release. */
+ int qcom_usb4_x1_retire_platform(struct device *owner, struct x1_pcie_state *state,
+ 			       int (*check_stopped)(void *), void *context);
++/* Omarchy flavor: the same release for a preparation that never connected. */
++int qcom_usb4_x1_idle_retire_platform(struct device *owner, struct x1_pcie_state *state,
++				      int (*check_stopped)(void *), void *context);
+ 
+ #endif
+diff --git a/drivers/thunderbolt/tb.c b/drivers/thunderbolt/tb.c
+index c6cb130..d455f42 100644
+--- a/drivers/thunderbolt/tb.c
++++ b/drivers/thunderbolt/tb.c
+@@ -94,6 +94,8 @@ struct tb_cm {
+ 	bool x1_stop_complete;
+ 	bool x1_cm_retire_attempted;
+ 	bool x1_cm_retired;
++	/* Omarchy flavor: an empty domain frozen for an idle power-down. */
++	bool x1_idle_frozen;
+ 	u64 x1_retained_generation;
+ 	struct tb_switch *x1_held_root;
+ 	struct tb_switch *x1_held_switch;
+@@ -3927,6 +3929,156 @@ unsigned int tb_x1_events_pending(struct tb *tb)
+ 	return atomic_read(&tcm->x1_pending_events);
+ }
+ 
++static bool tb_x1_root_empty(struct tb *tb)
++{
++	struct tb_port *port;
++
++	if (!tb->root_switch || tb->root_switch->is_unplugged)
++		return false;
++	tb_switch_for_each_port(tb->root_switch, port)
++		if (port->remote || port->xdomain)
++			return false;
++	return true;
++}
++
++/**
++ * tb_x1_idle_freeze() - Freeze an empty X1 domain before an idle power-down
++ * @tb: Native domain of the X1 router-0 frontend, never approved or held
++ *
++ * Omarchy flavor. Caller holds the owner device, frontend and domain locks.
++ * Like a tunnel hold, the retained flag turns later events into records only,
++ * so no CM worker issues control requests while the router is stopped.
++ */
++int tb_x1_idle_freeze(struct tb *tb)
++{
++	struct tb_cm *tcm;
++	int ret;
++
++	if (!tb)
++		return -EINVAL;
++	lockdep_assert_held(&tb->lock);
++	ret = tb_x1_pcie_owner(tb);
++	if (ret)
++		return ret;
++	tcm = tb_priv(tb);
++	if (tb_x1_retained_mode(tb) || tcm->x1_idle_frozen || tcm->x1_hold_attempted ||
++	    tcm->x1_pcie_attempted || tcm->x1_cm_retire_attempted)
++		return -EALREADY;
++	if (!tb_x1_root_empty(tb) || !list_empty(&tcm->tunnel_list) ||
++	    atomic_read(&tcm->x1_pending_events))
++		return -EBUSY;
++	tcm->x1_idle_frozen = true;
++	smp_store_release(&tcm->x1_retained, true);
++	tcm->hotplug_active = false;
++	return 0;
++}
++
++static int tb_x1_idle_cm_check(struct tb *tb)
++{
++	struct tb_cm *tcm = tb_priv(tb);
++	struct tb_port *port;
++	unsigned int i;
++
++	lockdep_assert_held(&tb->lock);
++	if (tb->cm_ops != &tb_cm_ops || !tb->nhi || !tb->nhi->going_away ||
++	    tb->security_level != TB_SECURITY_NOPCIE ||
++	    !tb_ctl_x1_retired(tb->ctl, tb->nhi) || !tb_x1_retained_mode(tb) ||
++	    !tcm->x1_idle_frozen || tcm->hotplug_active || tcm->x1_hold_attempted ||
++	    tcm->x1_pcie_attempted || tcm->x1_cm_retired || !list_empty(&tcm->tunnel_list))
++		return -EPERM;
++	if (!tb_x1_root_empty(tb))
++		return -EBUSY;
++	for (i = 0; i < ARRAY_SIZE(tcm->groups); i++)
++		if (!list_empty(&tcm->groups[i].ports))
++			return -EBUSY;
++	list_for_each_entry(port, &tcm->dp_resources, list)
++		if (port->sw != tb->root_switch)
++			return -EXDEV;
++	return 0;
++}
++
++/**
++ * tb_x1_idle_retire_cm() - Remove the frozen, powered-off root of an idle domain
++ * @tb: Domain frozen by tb_x1_idle_freeze(), control channel already retired
++ * @s: Kernel-owned receipt
++ * @check_stopped: Frontend proof that the router is powered off
++ * @context: Argument for @check_stopped
++ *
++ * Omarchy flavor counterpart of tb_x1_retire_cm() for a domain that never had
++ * a device or tunnel. No control request or register access is issued.
++ */
++int tb_x1_idle_retire_cm(struct tb *tb, struct tb_x1_cm_retire *s,
++			 int (*check_stopped)(void *), void *context)
++{
++	struct tb_switch *root;
++	struct tb_cm *tcm;
++	unsigned int i;
++	int ret;
++
++	if (!tb || !s || !check_stopped)
++		return -EINVAL;
++	if (tb->cm_ops != &tb_cm_ops)
++		return -EPERM;
++	mutex_lock(&tb->lock);
++	tcm = tb_priv(tb);
++	if (tcm->x1_cm_retire_attempted || s->attempted) {
++		ret = -EALREADY;
++		goto unlock;
++	}
++	if (s->workers_drained || s->tunnel_released || s->routers_removed ||
++	    s->finished || s->error || s->stage) {
++		ret = -EINVAL;
++		goto unlock;
++	}
++	ret = check_stopped(context);
++	if (!ret)
++		ret = tb_x1_idle_cm_check(tb);
++	if (ret)
++		goto unlock;
++	tcm->x1_cm_retire_attempted = true;
++	s->attempted = true;
++	s->stage = "drain-cm-work";
++	mutex_unlock(&tb->lock);
++	cancel_delayed_work_sync(&tcm->remove_work);
++	for (i = 0; i < ARRAY_SIZE(tcm->groups); i++)
++		cancel_delayed_work_sync(&tcm->groups[i].release_work);
++	flush_workqueue(tb->wq);
++	mutex_lock(&tb->lock);
++	s->workers_drained = true;
++	ret = check_stopped(context);
++	if (!ret)
++		ret = tb_x1_idle_cm_check(tb);
++	if (!ret && atomic_read(&tcm->x1_pending_events))
++		ret = -EBUSY;
++	if (ret)
++		goto fail;
++	s->tunnel_released = true; /* Nothing was ever tunneled. */
++	root = tb_switch_get(tb->root_switch);
++	tb_remove_dp_resources(root);
++	tb->root_switch = NULL;
++	root->is_unplugged = true;
++	s->stage = "remove-powered-off-root";
++	mutex_unlock(&tb->lock);
++	tb_switch_remove_x1_powered_off(root);
++	mutex_lock(&tb->lock);
++	if (device_is_registered(&root->dev)) {
++		ret = -EBUSY;
++		goto fail;
++	}
++	s->routers_removed = true;
++	tcm->x1_cm_retired = true;
++	s->finished = true;
++	s->stage = "cm-retired-domain-retained";
++	mutex_unlock(&tb->lock);
++	tb_switch_put(root);
++	return 0;
++fail:
++	s->error = ret;
++unlock:
++	mutex_unlock(&tb->lock);
++	return ret;
++}
++
+ int tb_x1_hold_pcie(struct tb *tb, struct tb_switch *sw, u64 expected_uid)
+ {
+ 	struct tb_x1_retained_context context = { tb, expected_uid };
+diff --git a/drivers/thunderbolt/tb.h b/drivers/thunderbolt/tb.h
+index 7331ddf..9f8e870 100644
+--- a/drivers/thunderbolt/tb.h
++++ b/drivers/thunderbolt/tb.h
+@@ -767,6 +767,8 @@ struct tb_x1_tunnel_stop;
+ int tb_x1_hold_pcie(struct tb *tb, struct tb_switch *sw, u64 expected_uid);
+ /* Omarchy flavor: CM hotplug and notification work still queued or running. */
+ unsigned int tb_x1_events_pending(struct tb *tb);
++/* Omarchy flavor: idle power-down of a domain that never had a device. */
++int tb_x1_idle_freeze(struct tb *tb);
+ int tb_x1_stop_pcie_retained(struct tb *tb, u64 expected_uid,
+ 			     struct tb_x1_tunnel_stop *receipt);
+ int tb_x1_pcie_stopped(struct tb *tb, u64 expected_uid);
+@@ -784,6 +786,8 @@ struct tb_x1_cm_retire {
+ int tb_x1_retire_cm(struct tb *tb, u64 expected_uid,
+ 		struct tb_x1_cm_retire *receipt,
+ 		int (*check_stopped)(void *), void *context);
++int tb_x1_idle_retire_cm(struct tb *tb, struct tb_x1_cm_retire *receipt,
++			 int (*check_stopped)(void *), void *context);
+ void tb_switch_remove_x1_powered_off(struct tb_switch *sw);
+ #endif
+ 

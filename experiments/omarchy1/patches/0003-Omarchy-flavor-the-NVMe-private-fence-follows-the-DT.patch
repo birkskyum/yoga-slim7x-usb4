@@ -1,0 +1,36 @@
+From 4192199b2331c20e7a3a29da1d59e3cff971eefe Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 02:58:09 +0200
+Subject: [PATCH 03/10] Omarchy flavor: the NVMe private fence follows the DT
+ read-test opt-in
+
+---
+ drivers/nvme/host/x1-private-read.h | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/nvme/host/x1-private-read.h b/drivers/nvme/host/x1-private-read.h
+index cb68c77..0e73c6b 100644
+--- a/drivers/nvme/host/x1-private-read.h
++++ b/drivers/nvme/host/x1-private-read.h
+@@ -6,7 +6,10 @@
+ #include <linux/of.h>
+ #include <linux/property.h>
+ 
+-/* Only probe-time topology inspection. No firmware calls or IRQ-time OF walk. */
++/* Only probe-time topology inspection. No firmware calls or IRQ-time OF walk.
++ * The private fence applies only to the harness DT, which carries the read-test
++ * opt-in; the Omarchy flavor's DT omits it and gets the standard NVMe driver.
++ */
+ static bool x1_nvme_private_host(struct pci_dev *pdev)
+ {
+ 	struct pci_host_bridge *host = pci_find_host_bridge(pdev->bus);
+@@ -18,7 +21,8 @@ static bool x1_nvme_private_host(struct pci_dev *pdev)
+ 		return false;
+ 	expected = of_find_node_by_path("/soc@0/pcie-imsi@400000000");
+ 	match = expected && host->dev.parent->of_node == expected &&
+-		of_device_is_compatible(expected, "birk,yoga-x1-pci0-imsi-local");
++		of_device_is_compatible(expected, "birk,yoga-x1-pci0-imsi-local") &&
++		of_property_read_bool(expected, "qcom,x1-private-nvme-read-test");
+ 	of_node_put(expected);
+ 	return match;
+ }

@@ -1,0 +1,148 @@
+From e2dd9ae0952866e7d587ab21b9921e56c404e23a Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 02:12:27 +0200
+Subject: [PATCH] X1 host: re-arm an attachment that never reached USB4
+
+Sometimes the PMIC misses the cable e-marker at attach, so there is no
+VCONN, no Enter_USB and no MCU connect command, and the port stays in
+plain USB mode. When such an untouched attachment detaches, re-arm the
+waiting state (up to 16 attempts within 30 s) so a replug can connect,
+instead of making the whole session terminal until a cold boot.
+
+First hardware run on boot f339cc52 (23 September 2026): the first
+attach never entered USB4, and one replug connected.
+---
+ drivers/thunderbolt/qcom-usb4-x1-host.c | 58 ++++++++++++++++++++++++-
+ 1 file changed, 56 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index 85f9bd7..0d2a5a7 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -122,6 +122,9 @@ MODULE_PARM_DESC(x1_cm_retire, "Private powered-off CM/domain retirement after c
+ static bool x1_managed;
+ module_param(x1_managed, bool, 0444);
+ MODULE_PARM_DESC(x1_managed, "Private managed empty-port sessions and checked clean-eject reconnect (default false)");
++/* Managed attachments without a USB4 connect command; each retry needs a detach. */
++#define X1_NEGOTIATION_WINDOW	(30 * HZ)
++#define X1_NEGOTIATION_ATTEMPTS	16
+ 
+ struct x1_power_stop {
+ 	bool attempted, finished, mcu_request_cleared, rx_reference;
+@@ -206,6 +209,11 @@ struct x1_host {
+ 	u64 batch_uid; /* Privileged admission only; never emitted in sysfs/logs. */
+ 	u16 batch_vendor, batch_device;
+ 	struct tb_switch *batch_switch;
++	/* Managed only: attachments that ended before any USB4 connect command. */
++	unsigned long negotiation_deadline;
++	unsigned int negotiation_failures;
++	int negotiation_error;
++	bool negotiation_rearm;
+ 	struct x1_train_state training;
+ 	struct x1_pcie_inventory inventory;
+ 	/* Separate, default-off retained teardown. Never rearms the batch. */
+@@ -308,9 +316,24 @@ static struct x1_host *x1_session_alloc(struct x1_port *port)
+ 	return host;
+ }
+ 
++/* Managed only: no MCU connect command, USB4 router or PCIe stage exists for
++ * this attachment, so its detach may re-arm waiting. Caller holds host->lock.
++ */
++static bool x1_attach_untouched(const struct x1_host *host)
++{
++	return x1_managed && host->batch_attempted && host->batch_waiting &&
++	       !host->batch_terminal && !host->error && !host->stopping &&
++	       !host->command_attempted && !host->connected_command &&
++	       !host->pending_command && !host->batch_switch &&
++	       !host->training.attempted && !host->inventory.attempted &&
++	       !host->pcie.receiver.attempted && !host->pcie.host_attempted &&
++	       !host->pcie.nvme_bind_attempted;
++}
++
+ /* Type-C callback lock held. The first attachment is allowed only after local
+  * preparation; every subsequent orientation/disconnect is terminal, including
+- * before the MCU command. Duplicate notifications are not new attachments.
++ * before the MCU command, except a managed detach of an untouched attachment.
++ * Duplicate notifications are not new attachments.
+  */
+ static int x1_batch_orientation(struct x1_host *host, enum typec_orientation orientation)
+ {
+@@ -320,6 +343,13 @@ static int x1_batch_orientation(struct x1_host *host, enum typec_orientation ori
+ 		return host->error ?: -ESHUTDOWN;
+ 	if (orientation == host->orientation)
+ 		return 0;
++	/* Firmware never entered USB4 on this attachment: its detach re-arms. */
++	if (orientation == TYPEC_ORIENTATION_NONE &&
++	    host->batch_orientation != TYPEC_ORIENTATION_NONE && x1_attach_untouched(host)) {
++		host->batch_orientation = TYPEC_ORIENTATION_NONE;
++		host->negotiation_rearm = false;
++		return 0;
++	}
+ 	if (!host->batch_waiting || host->batch_orientation != TYPEC_ORIENTATION_NONE ||
+ 	    (orientation != TYPEC_ORIENTATION_NORMAL && orientation != TYPEC_ORIENTATION_REVERSE)) {
+ 		host->error = -ESHUTDOWN;
+@@ -566,6 +596,9 @@ static int x1_mux_set(struct typec_mux_dev *mux, struct typec_mux_state *state)
+ 			goto out;
+ 		}
+ 		host->pending_command = 0;
++		/* An abandoned attachment may connect only after a physical detach. */
++		if (host->negotiation_rearm)
++			goto out;
+ 		ret = qcom_usb4_typec_usb4_command(state->data, host->orientation, 1, &command);
+ 		if (ret && (host->command_attempted || host->batch_attempted))
+ 			host->error = ret;
+@@ -1162,6 +1195,12 @@ static int x1_batch_wait(struct x1_host *host)
+ 			ret = -ETIMEDOUT;
+ 		if (!ret && (host->stopping || host->suspended || !host->ready || !host->tb))
+ 			ret = -ESHUTDOWN;
++		if (!ret && x1_attach_untouched(host)) {
++			if (host->batch_orientation == TYPEC_ORIENTATION_NONE)
++				ret = -ENOTCONN;
++			else if (time_after_eq(jiffies, host->negotiation_deadline))
++				ret = -ETIMEDOUT;
++		}
+ 		if (!ret && host->connected_command) {
+ 			if (!host->batch_waiting || !host->command_attempted ||
+ 			    host->orientation == TYPEC_ORIENTATION_NONE ||
+@@ -1241,11 +1280,12 @@ static ssize_t inventory_once_store(struct device *dev, struct device_attribute
+ 	    host->pcie.prepared && !host->stopping && !host->suspended &&
+ 	    uid == host->batch_uid && vendor == host->batch_vendor &&
+ 	    device == host->batch_device) {
+-		if (host->orientation == TYPEC_ORIENTATION_NONE) {
++		if (host->orientation == TYPEC_ORIENTATION_NONE || host->negotiation_rearm) {
+ 			ret = -EAGAIN;
+ 			goto out;
+ 		}
+ 		host->batch_deadline = jiffies + 120 * HZ;
++		host->negotiation_deadline = jiffies + X1_NEGOTIATION_WINDOW;
+ 		goto wait_attachment;
+ 	}
+ 	if (host->startup_attempted || host->pcie.attempted || host->batch_attempted) {
+@@ -1298,6 +1338,17 @@ wait_attachment:
+ 	dev_info(dev, "inventory batch: local preparation passed; connect admitted device once within 120 seconds\n");
+ 	ret = x1_batch_wait(host);
+ 	mutex_lock(&host->lock);
++	if ((ret == -ENOTCONN || ret == -ETIMEDOUT) && x1_attach_untouched(host)) {
++		host->negotiation_failures++;
++		host->negotiation_error = ret;
++		if (host->negotiation_failures < X1_NEGOTIATION_ATTEMPTS) {
++			host->negotiation_rearm = host->batch_orientation != TYPEC_ORIENTATION_NONE;
++			dev_warn(dev, "USB4 not negotiated on this attachment (%d); unplug and reconnect to retry (%u/%u)\n",
++				 ret, host->negotiation_failures, X1_NEGOTIATION_ATTEMPTS);
++			ret = -ENOTCONN;
++			goto out;
++		}
++	}
+ 	host->batch_waiting = false;
+ 	if (ret)
+ 		goto terminal;
+@@ -1414,6 +1465,9 @@ static ssize_t inventory_state_show(struct device *dev, struct device_attribute
+ 		READ_ONCE(host->pcie.cfg_error), host->pcie.host_step ?: "none", host->pcie.mem.attempted,
+ 		host->pcie.mem.complete, host->pcie.mem.error,
+ 		host->pcie.nvme_bind_attempted, host->pcie.nvme_bound);
++	len += sysfs_emit_at(buf, len, "negotiation_failures=%u negotiation_error=%d negotiation_rearm=%u negotiation_limit=%u\n",
++		host->negotiation_failures, host->negotiation_error, host->negotiation_rearm,
++		X1_NEGOTIATION_ATTEMPTS);
+ 	/* The first config failure publishes its immutable detail before errno. */
+ 	if (smp_load_acquire(&host->pcie.cfg_error))
+ 		len += sysfs_emit_at(buf, len,

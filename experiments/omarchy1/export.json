@@ -1,0 +1,253 @@
+{
+  "version": 1,
+  "date": "2026-09-23",
+  "scope": "Reference code for the general (any USB4 NVMe) flavor, not a complete kernel overlay, installer or boot recipe",
+  "baseline": "https://github.com/jdvmi00/glymur-usb4/tree/109b47c46634c65be22e588756e8bdd8142ac6cb",
+  "public_parent": "fb91281ae218116813331ca561613b1094abcb26",
+  "private_sources": {
+    "harness": "293ee59d0c02969f98f949c536caf3be5fb06767",
+    "omarchy": "f55279c6ba2632414d84681cae26000670787ccd"
+  },
+  "hardware_scope": "Read docs/USB4-2026-09-23.md. Router 0 (left rear port) only; sleep after a router restart hangs.",
+  "private_payloads_included": false,
+  "files": [
+    {
+      "export": "patches/0001-X1-host-re-arm-an-attachment-that-never-reached-USB4.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "6d64f8add0d2e3da7ac812302f50dce0d41417b8cef047e72e383b81e7994e9d",
+      "public_sha256": "6d64f8add0d2e3da7ac812302f50dce0d41417b8cef047e72e383b81e7994e9d",
+      "changes": []
+    },
+    {
+      "export": "patches/0002-Omarchy-flavor-x1_general-admits-any-USB4-NVMe-SSD-o.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "15307b9a7b25fa90633c19e86c121dc03ff873c511660a4eddc1bce9c1d14e92",
+      "public_sha256": "15307b9a7b25fa90633c19e86c121dc03ff873c511660a4eddc1bce9c1d14e92",
+      "changes": []
+    },
+    {
+      "export": "patches/0003-Omarchy-flavor-the-NVMe-private-fence-follows-the-DT.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "70d9b3e60f2281d806deabc4954d99154971ca4732ef3fbb319077068d04954b",
+      "public_sha256": "70d9b3e60f2281d806deabc4954d99154971ca4732ef3fbb319077068d04954b",
+      "changes": []
+    },
+    {
+      "export": "patches/0004-Omarchy-flavor-let-queued-CM-events-finish-before-th.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "3e27cce8188ab9bf70773114748845430c15e09e92c5c450b90d58404a4c7be5",
+      "public_sha256": "3e27cce8188ab9bf70773114748845430c15e09e92c5c450b90d58404a4c7be5",
+      "changes": []
+    },
+    {
+      "export": "patches/0005-Omarchy-flavor-keep-the-proven-32-bit-DMA-limit-for-.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "a27e40ee9af02dcd41282d45e7141a367f8fdc703414b41bdea77c3c863f3cc5",
+      "public_sha256": "a27e40ee9af02dcd41282d45e7141a367f8fdc703414b41bdea77c3c863f3cc5",
+      "changes": []
+    },
+    {
+      "export": "patches/0006-Omarchy-flavor-drop-the-32-bit-DMA-cap-of_dma_config.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "5d5ce9c2afc9d2aa57230f240eea50d687db793e73e51e1291c7116156784fc4",
+      "public_sha256": "5d5ce9c2afc9d2aa57230f240eea50d687db793e73e51e1291c7116156784fc4",
+      "changes": []
+    },
+    {
+      "export": "patches/0007-Omarchy-flavor-power-an-idle-router-down-before-syst.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "ea85cfba5bad8b9664af45d608914c9ab9bad12e9c1cab708c7a303a9105f4f0",
+      "public_sha256": "ea85cfba5bad8b9664af45d608914c9ab9bad12e9c1cab708c7a303a9105f4f0",
+      "changes": []
+    },
+    {
+      "export": "patches/0008-Omarchy-flavor-retire-a-router-whose-drive-was-pulle.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "f0cbbd57becc0cc900050546591650de389d99e1f56c29f5f331a311c19174c7",
+      "public_sha256": "f0cbbd57becc0cc900050546591650de389d99e1f56c29f5f331a311c19174c7",
+      "changes": []
+    },
+    {
+      "export": "patches/0009-Omarchy-flavor-the-idle-power-stop-s-runtime-suspend.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "a6cf5062aee08e9ac8c9a944e9f92af88fdb2134c2bb5ad3b5a81e3a9ed92bc2",
+      "public_sha256": "a6cf5062aee08e9ac8c9a944e9f92af88fdb2134c2bb5ad3b5a81e3a9ed92bc2",
+      "changes": []
+    },
+    {
+      "export": "patches/0010-Omarchy-flavor-keep-gcc_usb4_0_gdsc-on-and-start-the.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "97e51179a08240c6f5ba3e5268177965039ab7d731161ce1d600c9ba773e9d88",
+      "public_sha256": "97e51179a08240c6f5ba3e5268177965039ab7d731161ce1d600c9ba773e9d88",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-host.c",
+      "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-host.c",
+      "source_sha256": "f4bcf623598bb0e466d5e0f6cee586d44c26b988410d15abee727d541ea26168",
+      "public_sha256": "f4bcf623598bb0e466d5e0f6cee586d44c26b988410d15abee727d541ea26168",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.c",
+      "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-pcie.c",
+      "source_sha256": "db67f846615a63a2165600b8cfabc2f5a85df6a2485e3d9aeaf8126d932569a0",
+      "public_sha256": "db67f846615a63a2165600b8cfabc2f5a85df6a2485e3d9aeaf8126d932569a0",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.h",
+      "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-pcie.h",
+      "source_sha256": "2e16e06bf725b98cf00b838629493df933b05e50b0d2a1e691fdb4dd261c58d1",
+      "public_sha256": "2e16e06bf725b98cf00b838629493df933b05e50b0d2a1e691fdb4dd261c58d1",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/tb.c",
+      "source_checkpoint": "src omarchy:drivers/thunderbolt/tb.c",
+      "source_sha256": "8fdfc6d07d21c52e5a4c5656c06869c3407860daa2b2be31d5ceffb09ff3d719",
+      "public_sha256": "8fdfc6d07d21c52e5a4c5656c06869c3407860daa2b2be31d5ceffb09ff3d719",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/tb.h",
+      "source_checkpoint": "src omarchy:drivers/thunderbolt/tb.h",
+      "source_sha256": "404fe60a61598a96570e866389396ce10edc2d964dbb9b8d49e6d57121146b2c",
+      "public_sha256": "404fe60a61598a96570e866389396ce10edc2d964dbb9b8d49e6d57121146b2c",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/ctl.c",
+      "source_checkpoint": "src omarchy:drivers/thunderbolt/ctl.c",
+      "source_sha256": "d266a77161c81036a4e17e9bbbe8f7c1c29ae9d87ed58ffc3e74237bdd960ffc",
+      "public_sha256": "d266a77161c81036a4e17e9bbbe8f7c1c29ae9d87ed58ffc3e74237bdd960ffc",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/thunderbolt/ctl.h",
+      "source_checkpoint": "src omarchy:drivers/thunderbolt/ctl.h",
+      "source_sha256": "53e2041e36894b84506fb596ed267a726f92c6878a9ad6235f146c7c8c7df1b5",
+      "public_sha256": "53e2041e36894b84506fb596ed267a726f92c6878a9ad6235f146c7c8c7df1b5",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/clk/qcom/gcc-x1e80100.c",
+      "source_checkpoint": "src omarchy:drivers/clk/qcom/gcc-x1e80100.c",
+      "source_sha256": "fc6e0bc8844e694dfd9843bf0c3ab8fe3611cb7ca82bbbe6cefb6d147f9bd84a",
+      "public_sha256": "fc6e0bc8844e694dfd9843bf0c3ab8fe3611cb7ca82bbbe6cefb6d147f9bd84a",
+      "changes": []
+    },
+    {
+      "export": "kernel/include/linux/soc/qcom/x1-usb4.h",
+      "source_checkpoint": "src omarchy:include/linux/soc/qcom/x1-usb4.h",
+      "source_sha256": "ea2d48a3f0d21c97e1d9bed2974c7bedfc6713230bd7feb616153148f5a9793a",
+      "public_sha256": "ea2d48a3f0d21c97e1d9bed2974c7bedfc6713230bd7feb616153148f5a9793a",
+      "changes": []
+    },
+    {
+      "export": "kernel/drivers/nvme/host/x1-private-read.h",
+      "source_checkpoint": "src omarchy:drivers/nvme/host/x1-private-read.h",
+      "source_sha256": "402733ddbfaebf83e875c0dd1e30bf8fa1d84db24d1644d1bfe931351aeac93a",
+      "public_sha256": "402733ddbfaebf83e875c0dd1e30bf8fa1d84db24d1644d1bfe931351aeac93a",
+      "changes": []
+    },
+    {
+      "export": "base/drivers/thunderbolt/tb.c",
+      "source_checkpoint": "src harness:drivers/thunderbolt/tb.c",
+      "source_sha256": "594b7f6c72cdd5c530c2dfa291bf279491bb00f05341287d69656d7aa84b791c",
+      "public_sha256": "594b7f6c72cdd5c530c2dfa291bf279491bb00f05341287d69656d7aa84b791c",
+      "changes": []
+    },
+    {
+      "export": "base/drivers/thunderbolt/ctl.c",
+      "source_checkpoint": "src harness:drivers/thunderbolt/ctl.c",
+      "source_sha256": "fa5dd1ad6a7e9bc6aec4150dcb7fcc8939f6dc785e1754264c5f6728618dd0c4",
+      "public_sha256": "fa5dd1ad6a7e9bc6aec4150dcb7fcc8939f6dc785e1754264c5f6728618dd0c4",
+      "changes": []
+    },
+    {
+      "export": "base/drivers/thunderbolt/qcom-usb4-x1-host.c",
+      "source_checkpoint": "src harness:drivers/thunderbolt/qcom-usb4-x1-host.c",
+      "source_sha256": "faa6138098118a359b74d75a3045c07ec5516c100167293e2abdecad04cbb051",
+      "public_sha256": "faa6138098118a359b74d75a3045c07ec5516c100167293e2abdecad04cbb051",
+      "changes": []
+    },
+    {
+      "export": "base/drivers/thunderbolt/qcom-usb4-x1-pcie.c",
+      "source_checkpoint": "src harness:drivers/thunderbolt/qcom-usb4-x1-pcie.c",
+      "source_sha256": "941c75efa72b035422387e389ed124cdb1b7e0960f5e5c70f5786b1bc57ca49d",
+      "public_sha256": "941c75efa72b035422387e389ed124cdb1b7e0960f5e5c70f5786b1bc57ca49d",
+      "changes": []
+    },
+    {
+      "export": "runtime/usb4_x1d.py",
+      "source_checkpoint": "runtime/usb4_x1d.py",
+      "source_sha256": "389d2e4847fc5d54e4159ce63f3bab652396542566384a86aae1769cf681f527",
+      "public_sha256": "389d2e4847fc5d54e4159ce63f3bab652396542566384a86aae1769cf681f527",
+      "changes": []
+    },
+    {
+      "export": "runtime/omarchy-usb4-sleep",
+      "source_checkpoint": "runtime/omarchy-usb4-sleep",
+      "source_sha256": "0a226898ce487006ccbda5f5a57121429966ca46799af3b077462e4ee6384d5d",
+      "public_sha256": "0a226898ce487006ccbda5f5a57121429966ca46799af3b077462e4ee6384d5d",
+      "changes": []
+    },
+    {
+      "export": "runtime/test_usb4_x1d.py",
+      "source_checkpoint": "runtime/test_usb4_x1d.py",
+      "source_sha256": "f467af7ff377daca6b4a39506e58ca7a17e7d30b19e42c96577a4dc9be561a19",
+      "public_sha256": "f467af7ff377daca6b4a39506e58ca7a17e7d30b19e42c96577a4dc9be561a19",
+      "changes": []
+    },
+    {
+      "export": "tests/test_general_pci.py",
+      "source_checkpoint": "tests/test_general_pci.py",
+      "source_sha256": "09736b9b442dc3f5b544f4622539fd5be286ea00005869a37528ca7ba48c0c88",
+      "public_sha256": "810fb4d11cf9611fce7aed5bd1373c6e1f5e832858db3ebe1d2079979c5335ac",
+      "changes": [
+        "path: SOURCE = HERE.parent / 'src/drivers/thunderbolt/qcom-usb4-x1-pcie.c' -> published layout"
+      ]
+    },
+    {
+      "export": "tests/test_general_drain.py",
+      "source_checkpoint": "tests/test_general_drain.py",
+      "source_sha256": "24fa86adadd07f76adb7d9f720a0c0df011efc6e95eb919f29fa228be6d5e5a0",
+      "public_sha256": "8591ce1e1ebf64554b82293cf5270ae2485e0c1da76dc8bb849ee6f21c3aea25",
+      "changes": [
+        "path: SOURCE = Path(__file__).resolve().parent.parent / 'src/drivers/thunder -> published layout"
+      ]
+    },
+    {
+      "export": "tests/test_idle_retire.py",
+      "source_checkpoint": "tests/test_idle_retire.py",
+      "source_sha256": "d2b3d355bd8e98c9cd66f9d8bb8c131e484665ff60346e7d1856b23cecffa0e8",
+      "public_sha256": "855fa10811d75f8105c74430ff13e62b3ac06980d0de1b7871e63227dacaf68e",
+      "changes": [
+        "path: SRC = HERE.parent / 'src' -> published layout",
+        "path: return subprocess.run(['git', '-C', str(SRC), 'show', BASE + ':' + str -> published layout"
+      ]
+    },
+    {
+      "export": "tests/test_idle_power_stop.py",
+      "source_checkpoint": "tests/test_idle_power_stop.py",
+      "source_sha256": "ef4aa685a7b1789dd7725d2c8f0140c169a79a002bc118e46b07e22c55e80879",
+      "public_sha256": "ef4aa685a7b1789dd7725d2c8f0140c169a79a002bc118e46b07e22c55e80879",
+      "changes": []
+    },
+    {
+      "export": "tests/test_pulled_retire.py",
+      "source_checkpoint": "tests/test_pulled_retire.py",
+      "source_sha256": "12c58e23d274427073c04f2fd4ae668e31bfb18fe3205ab15c4786f1c0b61c84",
+      "public_sha256": "12c58e23d274427073c04f2fd4ae668e31bfb18fe3205ab15c4786f1c0b61c84",
+      "changes": []
+    },
+    {
+      "export": "tests/test_power_domain.py",
+      "source_checkpoint": "tests/test_power_domain.py",
+      "source_sha256": "eb9609d480704ee6ce5266cdc3cae4912ca783f94bb47ca98d83c7ca93b4af06",
+      "public_sha256": "eb9609d480704ee6ce5266cdc3cae4912ca783f94bb47ca98d83c7ca93b4af06",
+      "changes": []
+    }
+  ]
+}

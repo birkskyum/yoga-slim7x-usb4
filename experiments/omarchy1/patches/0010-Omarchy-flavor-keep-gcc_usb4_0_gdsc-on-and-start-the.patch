@@ -1,0 +1,89 @@
+From f55279c6ba2632414d84681cae26000670787ccd Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 06:05:43 +0200
+Subject: [PATCH 10/10] Omarchy flavor: keep gcc_usb4_0_gdsc on, and start the
+ router only when its domain reports powered
+
+---
+ drivers/clk/qcom/gcc-x1e80100.c         | 23 ++++++++++++++++++++++-
+ drivers/thunderbolt/qcom-usb4-x1-host.c |  6 ++++++
+ include/linux/soc/qcom/x1-usb4.h        |  2 ++
+ 3 files changed, 30 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/clk/qcom/gcc-x1e80100.c b/drivers/clk/qcom/gcc-x1e80100.c
+index 21b663c..8751854 100644
+--- a/drivers/clk/qcom/gcc-x1e80100.c
++++ b/drivers/clk/qcom/gcc-x1e80100.c
+@@ -6816,6 +6816,9 @@ static struct gdsc gcc_usb3_mp_ss1_phy_gdsc = {
+ 	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE,
+ };
+ 
++/* Always on: once switched off after a router stop it does not power up
++ * again ("status stuck at 'off'"), even with no USB4 device ever connected.
++ */
+ static struct gdsc gcc_usb4_0_gdsc = {
+ 	.gdscr = 0x9f004,
+ 	.en_rest_wait_val = 0x2,
+@@ -6825,7 +6828,7 @@ static struct gdsc gcc_usb4_0_gdsc = {
+ 		.name = "gcc_usb4_0_gdsc",
+ 	},
+ 	.pwrsts = PWRSTS_OFF_ON,
+-	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE,
++	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE | ALWAYS_ON,
+ };
+ 
+ static struct gdsc gcc_usb4_1_gdsc = {
+@@ -7760,6 +7763,24 @@ int x1_gcc_usb4_reset_state(struct x1_gcc_usb4 *lease, u32 *state)
+ }
+ EXPORT_SYMBOL_GPL(x1_gcc_usb4_reset_state);
+ 
++int x1_gcc_usb4_power_on(struct x1_gcc_usb4 *lease)
++{
++	u32 gdscr, cfg;
++	int ret;
++	guard(mutex)(&x1_usb4_gcc_lock);
++
++	if (!x1_usb4_gcc_valid(lease))
++		return -EPERM;
++	ret = regmap_read(x1_usb4_gcc_regmap, gcc_usb4_0_gdsc.gdscr, &gdscr);
++	if (!ret)
++		ret = regmap_read(x1_usb4_gcc_regmap, gcc_usb4_0_gdsc.gdscr + 0x4, &cfg);
++	if (ret)
++		return ret;
++	/* GDSCR PWR_ON and CFG_GDSCR power-up complete, as gdsc.c polls them. */
++	return (gdscr & BIT(31)) && (cfg & BIT(16)) ? 0 : -ENODEV;
++}
++EXPORT_SYMBOL_GPL(x1_gcc_usb4_power_on);
++
+ static void x1_usb4_gcc_forget(void *unused)
+ {
+ 	guard(mutex)(&x1_usb4_gcc_lock);
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index 38a0188..4408949 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -1030,6 +1030,12 @@ static int x1_activate(struct x1_host *host)
+ 			goto release;
+ 		}
+ 	}
++	/* Omarchy flavor: never touch the router unless its domain is really on. */
++	if (x1_general) {
++		ret = x1_gcc_usb4_power_on(host->gcc);
++		if (ret)
++			goto release;
++	}
+ 	cfg.firmware = host->fw->data;
+ 	cfg.firmware_size = host->fw->size;
+ 	cfg.serial = host->serial;
+diff --git a/include/linux/soc/qcom/x1-usb4.h b/include/linux/soc/qcom/x1-usb4.h
+index f589843..e1ac896 100644
+--- a/include/linux/soc/qcom/x1-usb4.h
++++ b/include/linux/soc/qcom/x1-usb4.h
+@@ -25,5 +25,7 @@ int x1_gcc_usb4_pipe_hwcg(struct x1_gcc_usb4 *lease, bool enable);
+ int x1_gcc_usb4_ctrl_bit(struct x1_gcc_usb4 *lease, bool set);
+ /* Readback of router-0's eleven owned MISC reset request bits, not DMA idle. */
+ int x1_gcc_usb4_reset_state(struct x1_gcc_usb4 *lease, u32 *state);
++/* 0 only if gcc_usb4_0_gdsc reports powered up; -ENODEV if it is off. */
++int x1_gcc_usb4_power_on(struct x1_gcc_usb4 *lease);
+ 
+ #endif
