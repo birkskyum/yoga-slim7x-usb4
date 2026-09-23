@@ -1,0 +1,99 @@
+From 20eb4690fe8960b35a657ec2e9d401483a6ae134 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 03:16:38 +0200
+Subject: [PATCH 04/10] Omarchy flavor: let queued CM events finish before the
+ retained hold
+
+---
+ drivers/thunderbolt/qcom-usb4-x1-host.c | 37 ++++++++++++++++++++++++-
+ drivers/thunderbolt/tb.c                |  7 +++++
+ drivers/thunderbolt/tb.h                |  2 ++
+ 3 files changed, 45 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index 7183051..7fe5423 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -1272,6 +1272,33 @@ static int x1_batch_live(void *context)
+ 	return time_after_eq(jiffies, host->batch_deadline) ? -ETIMEDOUT : 0;
+ }
+ 
++/* Omarchy flavor: the retained hold refuses queued CM events, and the locked
++ * batch keeps any event that arrived meanwhile from running. Let the CM finish
++ * them, then recheck the approved tunnel before holding. Caller holds the
++ * batch's device, lifecycle, Type-C and domain locks, in that order.
++ */
++static int x1_general_drain_events(struct x1_host *host)
++{
++	unsigned long deadline = jiffies + 5 * HZ;
++	unsigned int pending, seen = 0;
++
++	lockdep_assert_held(&host->tb->lock);
++	while ((pending = tb_x1_events_pending(host->tb))) {
++		if (time_after(jiffies, deadline)) {
++			dev_warn(host->dev, "general: %u CM events still pending before hold\n",
++				 pending);
++			return -EBUSY;
++		}
++		seen = max(seen, pending);
++		mutex_unlock(&host->tb->lock);
++		msleep(20);
++		mutex_lock(&host->tb->lock);
++	}
++	if (seen)
++		dev_info(host->dev, "general: CM finished %u queued events before hold\n", seen);
++	return x1_batch_live(host);
++}
++
+ static ssize_t inventory_once_store(struct device *dev, struct device_attribute *attr,
+ 				    const char *buf, size_t count)
+ {
+@@ -1393,8 +1420,16 @@ wait_attachment:
+ 		ret = qcom_usb4_x1_batch_inventory(dev, &host->pcie, x1_batch_live, host,
+ 				vendor, device, &host->training, &host->inventory);
+ 	}
++	if (!ret && x1_general)
++		dev_info(dev, "general: endpoint %04x:%04x trained and inventoried\n",
++			 host->inventory.identity & 0xffff, host->inventory.identity >> 16);
+ 	if (!ret && x1_tunnel_quiesce) {
+-		ret = tb_x1_hold_pcie(host->tb, host->batch_switch, host->batch_uid);
++		if (x1_general)
++			ret = x1_general_drain_events(host);
++		if (!ret)
++			ret = tb_x1_hold_pcie(host->tb, host->batch_switch, host->batch_uid);
++		if (x1_general)
++			dev_info(dev, "general: tunnel hold result=%d\n", ret);
+ 		host->tunnel_held = !ret;
+ 		if (!ret) {
+ 			get_device(&host->tb->dev);
+diff --git a/drivers/thunderbolt/tb.c b/drivers/thunderbolt/tb.c
+index f257f44..c6cb130 100644
+--- a/drivers/thunderbolt/tb.c
++++ b/drivers/thunderbolt/tb.c
+@@ -3920,6 +3920,13 @@ static int tb_x1_retained_check(void *data)
+  * retains these resources. RX/Type-C notification epochs are evidence of
+  * observed changes, not proof against an unreported physical link failure.
+  */
++unsigned int tb_x1_events_pending(struct tb *tb)
++{
++	struct tb_cm *tcm = tb_priv(tb);
++
++	return atomic_read(&tcm->x1_pending_events);
++}
++
+ int tb_x1_hold_pcie(struct tb *tb, struct tb_switch *sw, u64 expected_uid)
+ {
+ 	struct tb_x1_retained_context context = { tb, expected_uid };
+diff --git a/drivers/thunderbolt/tb.h b/drivers/thunderbolt/tb.h
+index 0f1c493..7331ddf 100644
+--- a/drivers/thunderbolt/tb.h
++++ b/drivers/thunderbolt/tb.h
+@@ -765,6 +765,8 @@ int tb_x1_approve_pcie(struct tb *tb, struct tb_switch *sw, u64 expected_uid);
+ int tb_x1_validate_pcie(struct tb *tb, struct tb_switch *sw, u64 expected_uid);
+ struct tb_x1_tunnel_stop;
+ int tb_x1_hold_pcie(struct tb *tb, struct tb_switch *sw, u64 expected_uid);
++/* Omarchy flavor: CM hotplug and notification work still queued or running. */
++unsigned int tb_x1_events_pending(struct tb *tb);
+ int tb_x1_stop_pcie_retained(struct tb *tb, u64 expected_uid,
+ 			     struct tb_x1_tunnel_stop *receipt);
+ int tb_x1_pcie_stopped(struct tb *tb, u64 expected_uid);

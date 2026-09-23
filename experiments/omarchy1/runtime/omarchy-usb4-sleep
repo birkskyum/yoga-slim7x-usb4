@@ -1,0 +1,4 @@
+#!/bin/sh
+# systemd-sleep hook: the USB4 service powers the router down before sleep
+# and brings it back after resume. Installed as /usr/lib/systemd/system-sleep/omarchy-usb4.
+exec /usr/bin/python3 -B /opt/omarchy-usb4/usb4_x1d.py --sleep "$1"

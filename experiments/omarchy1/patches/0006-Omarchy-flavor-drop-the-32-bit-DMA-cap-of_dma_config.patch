@@ -1,0 +1,26 @@
+From b273a0e34047f2f94369bbee4d1d4a9a4d39b18e Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 04:18:54 +0200
+Subject: [PATCH 06/10] Omarchy flavor: drop the 32-bit DMA cap;
+ of_dma_configure overwrites it and 64-bit DMA through the tunnel is proven
+
+---
+ drivers/thunderbolt/qcom-usb4-x1-pcie.c | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.c b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+index e165674..2c77ac1 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+@@ -1642,11 +1642,6 @@ int qcom_usb4_x1_nvme_bind(struct device *owner, struct x1_pcie_state *state)
+ 		ret = x1_pcie_assigned_bars(ctx);
+ 	if (!ret && !state->general)
+ 		ret = nvme_x1_open_session(ctx->endpoint, &ctx->nvme_session);
+-	/* Only 32-bit DMA through this tunnel is proven. The standard NVMe
+-	 * driver asks for 64-bit, so cap the bus; high buffers bounce.
+-	 */
+-	if (!ret && state->general)
+-		ctx->endpoint->dev.bus_dma_limit = DMA_BIT_MASK(32);
+ 	if (!ret)
+ 		ret = device_set_driver_override(&ctx->endpoint->dev, "nvme");
+ 	if (ret)

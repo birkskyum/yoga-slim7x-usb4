@@ -1,0 +1,368 @@
+From 92345ed5ad7ebb3a47bf5c3d841cf22aadbb67f4 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 02:37:59 +0200
+Subject: [PATCH 02/10] Omarchy flavor: x1_general admits any USB4 NVMe SSD on
+ the standard NVMe driver
+
+---
+ .../dts/qcom/x1e80100-lenovo-yoga-slim7x.dts  |   1 -
+ drivers/thunderbolt/qcom-usb4-x1-host.c       |  81 ++++++++++++-
+ drivers/thunderbolt/qcom-usb4-x1-pcie.c       | 111 ++++++++++++++++--
+ drivers/thunderbolt/qcom-usb4-x1-pcie.h       |  11 ++
+ 4 files changed, 193 insertions(+), 11 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts b/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts
+index 54fd6e5..c7f4184 100644
+--- a/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts
++++ b/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts
+@@ -1679,7 +1679,6 @@
+ 	 */
+ 	pcie-imsi@400000000 {
+ 		compatible = "birk,yoga-x1-pci0-imsi-local";
+-		qcom,x1-private-nvme-read-test;
+ 		device_type = "pci";
+ 		#address-cells = <3>;
+ 		#size-cells = <2>;
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index 0d2a5a7..7183051 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -122,6 +122,9 @@ MODULE_PARM_DESC(x1_cm_retire, "Private powered-off CM/domain retirement after c
+ static bool x1_managed;
+ module_param(x1_managed, bool, 0444);
+ MODULE_PARM_DESC(x1_managed, "Private managed empty-port sessions and checked clean-eject reconnect (default false)");
++static bool x1_general;
++module_param(x1_general, bool, 0444);
++MODULE_PARM_DESC(x1_general, "Managed sessions admit any directly attached USB4 NVMe SSD on the standard NVMe driver (default false)");
+ /* Managed attachments without a USB4 connect command; each retry needs a detach. */
+ #define X1_NEGOTIATION_WINDOW	(30 * HZ)
+ #define X1_NEGOTIATION_ATTEMPTS	16
+@@ -1167,6 +1170,15 @@ static int x1_batch_parse(const char *buf, size_t count, u64 *uid, u16 *vendor,
+ {
+ 	u8 identity[8], ids[4];
+ 
++	/* The Omarchy flavor learns the router and endpoint from the attachment. */
++	if (x1_general) {
++		if (!sysfs_streq(buf, "inventory any"))
++			return -EINVAL;
++		*uid = 0;
++		*vendor = 0;
++		*device = 0;
++		return 0;
++	}
+ 	if ((count != 36 && (count != 37 || buf[36] != '\n')) ||
+ 	    memcmp(buf, "inventory ", 10) || buf[26] != ' ' || buf[31] != ':')
+ 		return -EINVAL;
+@@ -1210,6 +1222,13 @@ static int x1_batch_wait(struct x1_host *host)
+ 			} else {
+ 				mutex_lock(&host->tb->lock);
+ 				host->batch_switch = tb_switch_find_by_route(host->tb, 2);
++				/* Omarchy flavor: the first router found is the admitted one. */
++				if (host->batch_switch && x1_general && !host->batch_uid) {
++					if (!host->batch_switch->uid || host->batch_switch->uid == U64_MAX)
++						ret = -ENODEV;
++					else
++						host->batch_uid = host->batch_switch->uid;
++				}
+ 				if (host->batch_switch &&
+ 				    host->batch_switch->uid != host->batch_uid)
+ 					ret = -ENODEV;
+@@ -1264,7 +1283,7 @@ static ssize_t inventory_once_store(struct device *dev, struct device_attribute
+ 
+ 	if (!capable(CAP_SYS_ADMIN) || !x1_inventory_batch || !x1_imsi_receiver || x1_startup ||
+ 	    x1_runtime_startup || x1_pcie_prepare || x1_pcie_inspect || x1_pcie_cfg0 ||
+-	    (x1_tunnel_quiesce && !x1_nvme_read))
++	    (x1_tunnel_quiesce && !x1_nvme_read) || (x1_general && (!x1_managed || !x1_nvme_read)))
+ 		return -EPERM;
+ 	ret = x1_batch_parse(buf, count, &uid, &vendor, &device);
+ 	if (ret)
+@@ -1317,6 +1336,7 @@ static ssize_t inventory_once_store(struct device *dev, struct device_attribute
+ 	host->batch_step = "local-preparation";
+ 	host->pcie.receiver_requested = true;
+ 	host->pcie.nvme_requested = x1_nvme_read;
++	host->pcie.general = x1_general;
+ 	mutex_lock(&host->tb->lock);
+ 	if (host->tb->security_level != TB_SECURITY_NOPCIE || !x1_pcie_empty_domain(host->tb))
+ 		ret = -EPERM;
+@@ -1483,6 +1503,62 @@ static DEVICE_ATTR_RO(inventory_state);
+ /* Called with PCI0 and the endpoint's removal/shutdown locks held as well as
+  * the frontend locks below. No PCI/NVMe reentry, device free or rearm here.
+  */
++/* Omarchy flavor, first Eject step after userspace unmounted the drive:
++ * normal PCI removal of the endpoint while the tunnel is still live. The
++ * Type-C and CM locks are not held across the NVMe driver's own shutdown.
++ */
++static ssize_t endpoint_remove_once_store(struct device *dev,
++		struct device_attribute *attr, const char *buf, size_t count)
++{
++	struct x1_host *host __free(x1_session) = x1_session_get(dev);
++	int ret = -EPERM;
++
++	if (!capable(CAP_SYS_ADMIN) || !x1_general || !x1_managed || !x1_tunnel_quiesce ||
++	    !sysfs_streq(buf, "remove-endpoint-v1"))
++		return ret;
++	if (!device_trylock(dev))
++		return -EBUSY;
++	mutex_lock(&host->bind_lock);
++	mutex_lock(&host->lifecycle_lock);
++	mutex_lock(&host->lock);
++	if (!host->tb || !host->tunnel_held || !host->cold_owned || !host->ready ||
++	    host->stopping || host->suspended || !host->batch_attempted ||
++	    !host->batch_terminal || !host->batch_complete || host->batch_waiting ||
++	    host->batch_error || host->error != -ESHUTDOWN || !host->command_attempted ||
++	    !host->connected_command || host->pending_command != host->connected_command ||
++	    host->orientation == TYPEC_ORIENTATION_NONE ||
++	    host->orientation != host->batch_orientation || host->tunnel_stop_attempted) {
++		mutex_unlock(&host->lock);
++		goto out;
++	}
++	mutex_unlock(&host->lock);
++	ret = qcom_usb4_x1_general_remove(dev, &host->pcie);
++	dev_info(dev, "endpoint removal result=%d removed=%u\n", ret, host->pcie.endpoint_removed);
++out:
++	mutex_unlock(&host->lifecycle_lock);
++	mutex_unlock(&host->bind_lock);
++	device_unlock(dev);
++	return ret ? ret : count;
++}
++static DEVICE_ATTR_WO(endpoint_remove_once);
++
++static ssize_t general_state_show(struct device *dev, struct device_attribute *attr, char *buf)
++{
++	struct x1_host *host __free(x1_session) = x1_session_get(dev);
++	const struct x1_pcie_state *p = &host->pcie;
++	ssize_t len;
++
++	if (!mutex_trylock(&host->lifecycle_lock))
++		return sysfs_emit(buf, "busy=1 snapshot=unavailable\n");
++	len = sysfs_emit(buf,
++		"busy=0 enabled=%u admitted=%u endpoint_remove_attempted=%u endpoint_removed=%u endpoint_remove_error=%d cached=1\n",
++		x1_general, p->general, p->endpoint_remove_attempted, p->endpoint_removed,
++		p->endpoint_remove_error);
++	mutex_unlock(&host->lifecycle_lock);
++	return len;
++}
++static DEVICE_ATTR_RO(general_state);
++
+ static int x1_stop_tunnel_action(void *context)
+ {
+ 	struct x1_host *host = context;
+@@ -2273,7 +2349,8 @@ static struct attribute *x1_attrs[] = {
+ 	&dev_attr_tunnel_quiesce_once.attr, &dev_attr_tunnel_quiesce_state.attr,
+ 	&dev_attr_host_quiesce_once.attr, &dev_attr_host_quiesce_state.attr,
+ 	&dev_attr_power_quiesce_once.attr, &dev_attr_power_quiesce_state.attr,
+-	&dev_attr_retire_state.attr, NULL,
++	&dev_attr_retire_state.attr,
++	&dev_attr_endpoint_remove_once.attr, &dev_attr_general_state.attr, NULL,
+ };
+ ATTRIBUTE_GROUPS(x1);
+ 
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.c b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+index 30e1d4f..2c77ac1 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+@@ -629,8 +629,11 @@ static int x1_pcie_admit(struct device *owner, struct platform_device **target)
+ 			goto out;
+ 	if (!x1_pcie_receiver_shape(np))
+ 		goto out;
++	/* The private NVMe read window needs this opt-in; the Omarchy flavor
++	 * needs it absent, so the standard NVMe driver runs unmodified.
++	 */
+ 	if (x1_pcie->state->nvme_requested &&
+-	    !of_property_read_bool(np, "qcom,x1-private-nvme-read-test"))
++	    of_property_read_bool(np, "qcom,x1-private-nvme-read-test") == x1_pcie->state->general)
+ 		goto out;
+ 	if (of_property_count_strings(np, "reg-names") !=
+ 			(x1_pcie->state->inventory_requested ? 3 : 2) ||
+@@ -1637,7 +1640,7 @@ int qcom_usb4_x1_nvme_bind(struct device *owner, struct x1_pcie_state *state)
+ 		ret = x1_pcie_scan_identity(ctx);
+ 	if (!ret)
+ 		ret = x1_pcie_assigned_bars(ctx);
+-	if (!ret)
++	if (!ret && !state->general)
+ 		ret = nvme_x1_open_session(ctx->endpoint, &ctx->nvme_session);
+ 	if (!ret)
+ 		ret = device_set_driver_override(&ctx->endpoint->dev, "nvme");
+@@ -1670,6 +1673,64 @@ out:
+ 	return ret;
+ }
+ 
++int qcom_usb4_x1_general_remove(struct device *owner, struct x1_pcie_state *state)
++{
++	struct x1_pcie_context *ctx;
++	struct pci_dev *ep;
++	unsigned long flags;
++	u16 command, msix = 0;
++	int ret = -EPERM;
++
++	if (!owner || !state)
++		return -EINVAL;
++	mutex_lock(&x1_pcie_lock);
++	ctx = x1_pcie;
++	if (!ctx || ctx->owner != owner || ctx->state != state || !state->general ||
++	    !state->nvme_requested || !state->host_prepared || !state->host_published ||
++	    !state->nvme_bound || !state->nvme_bind_attempted || state->error ||
++	    state->host_error || READ_ONCE(state->cfg_error) || state->config_fenced ||
++	    ctx->batch_active || !ctx->endpoint || !ctx->root_port ||
++	    !ctx->receiver_retained || !state->receiver.ready)
++		goto out;
++	if (state->endpoint_remove_attempted) {
++		ret = -EALREADY;
++		goto out;
++	}
++	state->endpoint_remove_attempted = true;
++	state->host_step = "general-endpoint-removal";
++	ep = ctx->endpoint;
++	/* Our own reference keeps the pci_dev for the later retire checks. */
++	pci_lock_rescan_remove();
++	pci_stop_and_remove_bus_device(ep);
++	pci_unlock_rescan_remove();
++	if (ep->dev.driver || pci_get_drvdata(ep) || ep->dev.msi.data ||
++	    device_is_registered(&ep->dev)) {
++		ret = -EIO;
++		goto done;
++	}
++	/* The endpoint must have dropped bus mastering and MSI-X before the fence. */
++	raw_spin_lock_irqsave(&x1_config_lock, flags);
++	ret = x1_pcie_host_local(ctx);
++	if (!ret) {
++		command = readw(ctx->config + PCI_COMMAND);
++		if (ctx->inventory->msix_offset)
++			msix = readw(ctx->config + ctx->inventory->msix_offset + PCI_MSIX_FLAGS);
++		if (command & PCI_COMMAND_MASTER || msix & PCI_MSIX_FLAGS_ENABLE)
++			ret = -EIO;
++	}
++	raw_spin_unlock_irqrestore(&x1_config_lock, flags);
++done:
++	state->endpoint_remove_error = ret;
++	state->endpoint_removed = !ret;
++	if (ret)
++		WRITE_ONCE(state->error, ret);
++	else
++		state->host_step = "general-endpoint-removed";
++out:
++	mutex_unlock(&x1_pcie_lock);
++	return ret;
++}
++
+ struct x1_pcie_fenced_action {
+ 	struct x1_pcie_context *pcie;
+ 	int (*action)(void *);
+@@ -1732,9 +1793,13 @@ int qcom_usb4_x1_fence_and_quiesce(struct device *owner, struct x1_pcie_state *s
+ 	    !state->host_prepared || !state->host_published || !state->nvme_bound ||
+ 	    !state->nvme_bind_attempted || state->error || state->host_error ||
+ 	    READ_ONCE(state->cfg_error) || ctx->batch_active || !ctx->endpoint ||
+-	    !ctx->root_port || !ctx->receiver_retained || !state->receiver.ready)
++	    !ctx->root_port || !ctx->receiver_retained || !state->receiver.ready ||
++	    state->general != state->endpoint_removed)
+ 		goto out;
+-	ret = nvme_x1_retire_irqs_and_action(ctx->endpoint, x1_pcie_fence_action, &call);
++	if (state->general)
++		ret = x1_pcie_fence_action(&call);
++	else
++		ret = nvme_x1_retire_irqs_and_action(ctx->endpoint, x1_pcie_fence_action, &call);
+ out:
+ 	mutex_unlock(&x1_pcie_lock);
+ 	return ret;
+@@ -1765,8 +1830,13 @@ int qcom_usb4_x1_retire_namespaces(struct device *owner, struct x1_pcie_state *s
+ 		goto out;
+ 	}
+ 	state->namespace_retire_attempted = true;
+-	/* No config reads or endpoint MMIO behind the stopped/reset tunnel. */
+-	ret = nvme_x1_retire_namespaces(ctx->endpoint, check_stopped, context);
++	/* No config reads or endpoint MMIO behind the stopped/reset tunnel. The
++	 * Omarchy flavor's namespaces left with the endpoint's normal removal.
++	 */
++	if (state->general)
++		ret = state->endpoint_removed ? check_stopped(context) : -EPERM;
++	else
++		ret = nvme_x1_retire_namespaces(ctx->endpoint, check_stopped, context);
+ 	state->namespace_retire_error = ret;
+ 	state->namespace_retired = !ret;
+ out:
+@@ -1783,6 +1853,16 @@ static bool x1_pcie_retire_shape(struct x1_pcie_context *ctx)
+ 	struct pci_bus *bus = ctx->bridge->bus;
+ 	struct pci_dev *root = ctx->root_port, *endpoint = ctx->endpoint;
+ 
++	/* Omarchy flavor: the endpoint is already gone, leaving the bare root. */
++	if (ctx->state->general)
++		return bus && root && endpoint && bus->sysdata == ctx &&
++			pci_is_root_bus(bus) && !pci_domain_nr(bus) && !bus->number &&
++			root->bus == bus && !root->devfn && root->vendor == 0x17cb &&
++			root->device == 0x0111 && !root->dev.driver && root->subordinate &&
++			root->subordinate->parent == bus && list_is_singular(&bus->devices) &&
++			list_first_entry(&bus->devices, struct pci_dev, bus_list) == root &&
++			list_empty(&root->subordinate->devices) && ctx->state->endpoint_removed &&
++			!endpoint->dev.driver && !device_is_registered(&endpoint->dev);
+ 	if (!bus || !root || !endpoint || bus->sysdata != ctx ||
+ 	    !pci_is_root_bus(bus) || pci_domain_nr(bus) || bus->number ||
+ 	    root->bus != bus || root->devfn || root->vendor != 0x17cb ||
+@@ -1850,7 +1930,9 @@ int qcom_usb4_x1_retire_pci(struct device *owner, struct x1_pcie_state *state,
+ 		goto unlock_bus;
+ 	state->pci_retire_attempted = true;
+ 	state->host_step = "retire-stopped-nvme-resources";
+-	ret = nvme_x1_retire_resources(ctx->endpoint, check_stopped, context);
++	/* The standard NVMe driver freed its own resources at endpoint removal. */
++	if (!state->general)
++		ret = nvme_x1_retire_resources(ctx->endpoint, check_stopped, context);
+ 	if (ret)
+ 		goto failed;
+ 	state->nvme_resources_retired = true;
+@@ -1873,7 +1955,8 @@ int qcom_usb4_x1_retire_pci(struct device *owner, struct x1_pcie_state *state,
+ 		ret = -EIO;
+ 		goto failed;
+ 	}
+-	ret = nvme_x1_close_session(ctx->endpoint, ctx->nvme_session);
++	if (!state->general)
++		ret = nvme_x1_close_session(ctx->endpoint, ctx->nvme_session);
+ 	if (ret)
+ 		goto failed;
+ 	ctx->nvme_session = 0;
+@@ -2035,6 +2118,18 @@ int qcom_usb4_x1_batch_inventory(struct device *owner, struct x1_pcie_state *sta
+ 	if (ret)
+ 		goto terminal;
+ 	state->step = "batch-endpoint-inventory";
++	/* Omarchy flavor: admit whatever endpoint answers. The inventory below
++	 * still requires a single-function NVMe controller with MSI-X.
++	 */
++	if (state->general && !vendor && !device) {
++		u32 identity;
++
++		ret = x1_pcie_inventory_read(ctx, PCI_VENDOR_ID, &identity);
++		if (ret)
++			goto terminal;
++		vendor = identity & 0xffff;
++		device = identity >> 16;
++	}
+ 	ret = qcom_usb4_x1_inventory(x1_pcie_inventory_read, ctx, vendor, device, inventory);
+ 	if (!ret)
+ 		ret = x1_pcie_window_survived(ctx, true);
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.h b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+index 6e4ed3a..a7a26a6 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.h
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+@@ -42,6 +42,11 @@ struct x1_pcie_state {
+ 	/* Separately armed private read test; no namespace-write permission. */
+ 	bool nvme_requested, host_attempted, host_published, host_prepared;
+ 	bool nvme_bind_attempted, nvme_bound;
++	/* Omarchy flavor: any single NVMe endpoint on the standard NVMe driver,
++	 * removed through normal PCI removal before the fence. Set before prepare.
++	 */
++	bool general, endpoint_remove_attempted, endpoint_removed;
++	int endpoint_remove_error;
+ 	/* Monotonic admission fence, serialized with every PCI config callback.
+ 	 * A closed fence is not proof that DMA/IRQs or object lifetimes ended.
+ 	 */
+@@ -91,6 +96,12 @@ int qcom_usb4_x1_batch_inventory(struct device *owner, struct x1_pcie_state *sta
+  */
+ int qcom_usb4_x1_nvme_bind(struct device *owner, struct x1_pcie_state *state);
+ 
++/* Omarchy flavor only, before the fence. Normal PCI removal runs the NVMe
++ * driver's own shutdown and frees its vectors while the tunnel is still up.
++ * Caller holds device/bind/lifecycle locks but NOT Type-C/CM locks.
++ */
++int qcom_usb4_x1_general_remove(struct device *owner, struct x1_pcie_state *state);
++
+ /* After kernel-owned endpoint-quiesce proof, retire endpoint IRQs while
+  * hardware is live, close and synchronize ALL PCI configuration callbacks,
+  * then stop receiver IRQs before the retained-only tunnel-stop action.

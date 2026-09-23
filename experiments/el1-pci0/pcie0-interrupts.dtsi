@@ -1,0 +1,29 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+/* PCI0 assignment supplied by Qiang Yu, Qualcomm; owner-authorized publication.
+ * Reference fragment only: not a standalone overlay, host binding or installer.
+ * Requires the matching real PCI0 host and reviewed lifecycle/DMA integration.
+ * Do not apply to internal PCIe controllers or a resource-only prepare node.
+ */
+&pcie0 {
+	/delete-property/ msi-map;
+	/* Remove a leftover mask with its map. This is integration housekeeping. */
+	/delete-property/ msi-map-mask;
+	interrupt-parent = <&intc>;
+	interrupts = <GIC_SPI 655 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 657 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 664 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 668 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 348 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 349 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 351 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 702 IRQ_TYPE_LEVEL_HIGH>,
+		     <GIC_SPI 167 IRQ_TYPE_LEVEL_HIGH>;
+	interrupt-names = "msi0", "msi1", "msi2", "msi3",
+			  "msi4", "msi5", "msi6", "msi7", "global";
+	#interrupt-cells = <1>;
+	interrupt-map-mask = <0 0 0 0x7>;
+	interrupt-map = <0 0 0 1 &intc 0 0 GIC_SPI 703 IRQ_TYPE_LEVEL_HIGH>,
+			<0 0 0 2 &intc 0 0 GIC_SPI 708 IRQ_TYPE_LEVEL_HIGH>,
+			<0 0 0 3 &intc 0 0 GIC_SPI 714 IRQ_TYPE_LEVEL_HIGH>,
+			<0 0 0 4 &intc 0 0 GIC_SPI 716 IRQ_TYPE_LEVEL_HIGH>;
+};

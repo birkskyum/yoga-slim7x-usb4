@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "date": "2026-09-23",
+  "scope": "Draft device tree patches against an RFC binding; not submitted",
+  "base": "qcom/linux.git for-next 019fa5715726 plus the QMP USB4 PHY binding patch and the RFC router binding",
+  "hardware_scope": "Not run on hardware.",
+  "private_payloads_included": false,
+  "files": [
+    {
+      "export": "patches/0001-arm64-dts-qcom-hamoa-Add-USB4-Host-Routers.patch",
+      "source_checkpoint": "local draft branch yoga-usb4-dt-draft",
+      "source_sha256": "d1bfcbef028b86d1ba9591c139fb0b265346a5bb549896bfdb673f93bcf63e69",
+      "public_sha256": "d1bfcbef028b86d1ba9591c139fb0b265346a5bb549896bfdb673f93bcf63e69",
+      "changes": []
+    },
+    {
+      "export": "patches/0002-arm64-dts-qcom-x1e80100-lenovo-yoga-slim7x-Enable-US.patch",
+      "source_checkpoint": "local draft branch yoga-usb4-dt-draft",
+      "source_sha256": "a78f553fc92f1393d77bf4db182c3d4da7fe37f305d7b508f4548d56474b5086",
+      "public_sha256": "a78f553fc92f1393d77bf4db182c3d4da7fe37f305d7b508f4548d56474b5086",
+      "changes": []
+    }
+  ]
+}

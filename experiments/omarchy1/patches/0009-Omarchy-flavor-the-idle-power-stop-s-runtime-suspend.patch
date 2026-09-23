@@ -1,0 +1,45 @@
+From b0250c5a8a377b7f9cbf418a6a684fa0687f253b Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 05:25:22 +0200
+Subject: [PATCH 09/10] Omarchy flavor: the idle power stop's runtime suspend
+ waits for the domain child, as after an Eject
+
+---
+ drivers/thunderbolt/qcom-usb4-x1-host.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index a6e999a..38a0188 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -2191,7 +2191,10 @@ static int x1_idle_power_stop_run(struct x1_host *host)
+ 	ret = pm_runtime_put_sync(host->dev);
+ 	host->runtime_held = false;
+ 	s->runtime_released = true;
+-	if (ret < 0)
++	/* No receiver forbid holds the router here, so its idle check sees the
++	 * domain child and defers; the router suspends once the domain goes.
++	 */
++	if (ret < 0 && ret != -EBUSY && ret != -EAGAIN)
+ 		goto fail;
+ 	s->stage = "provider-votes-released-idle";
+ 	s->finished = true;
+@@ -2373,6 +2376,10 @@ static ssize_t idle_retire_once_store(struct device *dev,
+ 	host->idle_retire_attempted = true;
+ 	host->stopping = true;
+ 	host->ready = false;
++	/* Keep the router powered until PCIe0 is released, as the receiver's
++	 * forbid does after an Eject. Retained on failure.
++	 */
++	pm_runtime_get_noresume(host->dev);
+ 	host->batch_waiting = false;
+ 	host->batch_terminal = true;
+ 	host->error = -ESHUTDOWN;
+@@ -2414,6 +2421,7 @@ static ssize_t idle_retire_once_store(struct device *dev,
+ 	nhi->tx_rings = NULL;
+ 	nhi->rx_rings = NULL;
+ 	mutex_destroy(&host->qnhi.ownership_lock);
++	pm_runtime_put_sync(host->dev);
+ 	host->idle_retired = true;
+ 	host->fully_retired = true;
+ 	host->idle_retire_stage = "idle-retired";

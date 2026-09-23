@@ -1,5 +1,40 @@
 # Source provenance and publication changes
 
+## 23 September additions
+
+Two more reference components, under the same owner permission as the
+22 September export. [`experiments/omarchy1`](../experiments/omarchy1/README.md)
+holds the replug re-arm and the general-flavor commits as patches, the
+changed files after them, the service, and their tests; its `export.json`
+records every hash, private source and test-path adaptation.
+[`experiments/upstream-dt-draft`](../experiments/upstream-dt-draft/README.md)
+holds two unsubmitted device tree patches written against Qualcomm's RFC
+binding. The [23 September report](USB4-2026-09-23.md) describes the results.
+
+The per-port interrupt numbers and `PSET` bytes are values read from the
+Yoga's own ACPI tables; the tables themselves stay private. The firmware
+offset comes from static analysis of Qualcomm's Windows driver; no
+firmware bytes are included. No boot image, disk identity, credential, raw
+capture, deployment script or private machine manifest is included.
+
+## Separate 22 September EL1 reference export
+
+The owner renewed permission to publish the Qualcomm interrupt assignment,
+sanitized findings and important implementation code. The separate
+[`experiments/el1-pci0`](../experiments/el1-pci0/README.md) component records
+original/exported hashes, exact source scope, attribution and test adaptations
+in its `export.json`. It is a partial reference export, not a full kernel
+overlay or a replacement for the old aggregate below. The existing v38
+snapshot, aggregate and source fingerprints are unchanged. Current hardware
+results and their limits are in [the dated report](EL1-USB4-2026-09-22.md).
+
+No firmware, boot image, private disk identity, credential, raw capture,
+activation/deployment script or private machine manifest is included. This
+publication does not claim the partial export reproduces the complete tested
+kernel by itself or establishes reliable reconnect.
+
+## Historical v38 export
+
 The baseline is Jim Martin's public
 [`jdvmi00/glymur-usb4` at `109b47c46634c65be22e588756e8bdd8142ac6cb`](https://github.com/jdvmi00/glymur-usb4/tree/109b47c46634c65be22e588756e8bdd8142ac6cb).
 Its reconstruction applies 39 baseline prerequisites and nine review patches
