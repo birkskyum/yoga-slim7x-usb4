@@ -1,0 +1,110 @@
+From d0c157cc4975da4103c227e2e2ff8944c2f78d67 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Wed, 23 Sep 2026 13:48:50 +0200
+Subject: [PATCH 2/2] arm64: dts: qcom: x1e80100-lenovo-yoga-slim7x: Enable
+ USB4 on all three ports
+
+Each USB-C port of the Yoga Slim 7x sits behind a PS8830 retimer and
+a USB4-capable QMP PHY. Enable the three USB4 Host Routers and give
+each retimer's PHY-side port a second endpoint towards its router, so
+the retimer passes USB4 and TBT3 mode changes on after programming
+itself.
+---
+ .../dts/qcom/x1e80100-lenovo-yoga-slim7x.dts  | 57 ++++++++++++++++++-
+ 1 file changed, 54 insertions(+), 3 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts b/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts
+index 2692e4853..1546d7b96 100644
+--- a/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts
++++ b/arch/arm64/boot/dts/qcom/x1e80100-lenovo-yoga-slim7x.dts
+@@ -878,9 +878,18 @@
+ 			port@1 {
+ 				reg = <1>;
+ 
+-				retimer_ss2_ss_in: endpoint {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				retimer_ss2_ss_in: endpoint@0 {
++					reg = <0>;
+ 					remote-endpoint = <&usb_1_ss2_qmpphy_out>;
+ 				};
++
++				retimer_ss2_usb4_in: endpoint@1 {
++					reg = <1>;
++					remote-endpoint = <&usb4_2_mode_in>;
++				};
+ 			};
+ 
+ 			port@2 {
+@@ -935,9 +944,18 @@
+ 			port@1 {
+ 				reg = <1>;
+ 
+-				retimer_ss0_ss_in: endpoint {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				retimer_ss0_ss_in: endpoint@0 {
++					reg = <0>;
+ 					remote-endpoint = <&usb_1_ss0_qmpphy_out>;
+ 				};
++
++				retimer_ss0_usb4_in: endpoint@1 {
++					reg = <1>;
++					remote-endpoint = <&usb4_0_mode_in>;
++				};
+ 			};
+ 
+ 			port@2 {
+@@ -992,9 +1010,18 @@
+ 			port@1 {
+ 				reg = <1>;
+ 
+-				retimer_ss1_ss_in: endpoint {
++				#address-cells = <1>;
++				#size-cells = <0>;
++
++				retimer_ss1_ss_in: endpoint@0 {
++					reg = <0>;
+ 					remote-endpoint = <&usb_1_ss1_qmpphy_out>;
+ 				};
++
++				retimer_ss1_usb4_in: endpoint@1 {
++					reg = <1>;
++					remote-endpoint = <&usb4_1_mode_in>;
++				};
+ 			};
+ 
+ 			port@2 {
+@@ -1575,6 +1602,30 @@
+ 	status = "okay";
+ };
+ 
++&usb4_0_mode_in {
++	remote-endpoint = <&retimer_ss0_usb4_in>;
++};
++
++&usb4_1_mode_in {
++	remote-endpoint = <&retimer_ss1_usb4_in>;
++};
++
++&usb4_2_mode_in {
++	remote-endpoint = <&retimer_ss2_usb4_in>;
++};
++
++&usb4_router0 {
++	status = "okay";
++};
++
++&usb4_router1 {
++	status = "okay";
++};
++
++&usb4_router2 {
++	status = "okay";
++};
++
+ &usb_1_ss0_hsphy {
+ 	vdd-supply = <&vreg_l3j_0p8>;
+ 	vdda12-supply = <&vreg_l2j_1p2>;
