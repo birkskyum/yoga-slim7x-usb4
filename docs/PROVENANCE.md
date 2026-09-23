@@ -1,5 +1,22 @@
 # Source provenance and publication changes
 
+## 23 September additions
+
+Two more reference components, under the same owner permission as the
+22 September export. [`experiments/omarchy1`](../experiments/omarchy1/README.md)
+holds the replug re-arm and the general-flavor commits as patches, the
+changed files after them, the service, and their tests; its `export.json`
+records every hash, private source and test-path adaptation.
+[`experiments/upstream-dt-draft`](../experiments/upstream-dt-draft/README.md)
+holds two unsubmitted device tree patches written against Qualcomm's RFC
+binding. The [23 September report](USB4-2026-09-23.md) describes the results.
+
+The per-port interrupt numbers and `PSET` bytes are values read from the
+Yoga's own ACPI tables; the tables themselves stay private. The firmware
+offset comes from static analysis of Qualcomm's Windows driver; no
+firmware bytes are included. No boot image, disk identity, credential, raw
+capture, deployment script or private machine manifest is included.
+
 ## Separate 22 September EL1 reference export
 
 The owner renewed permission to publish the Qualcomm interrupt assignment,

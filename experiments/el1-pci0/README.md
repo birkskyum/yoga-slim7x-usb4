@@ -17,11 +17,11 @@ manifests and machine-specific activation/deployment scripts are not included.
 | `kernel/drivers/thunderbolt/x1-imsi.c`, `.h` | Standard DWC MSI-domain/target setup, checked programming, stop/release/retirement | Current receiver source from the hardware-tested managed candidate |
 | `x1-imsi-policy.c`, `.h` | Explicit PARF/global and reserved-target/BAR-window policy | Experimental policy, not a generic Qualcomm binding or DMA-isolation claim |
 | `qcom-usb4-x1-pcie.c`, `.h`, `x1-pci0-mem.h` | Guarded PCI0 decoder/host integration, receiver caller, PCI retirement and reset-before-genpd ordering | Full source files for integration context; extra kernel dependencies not bundled |
-| `qcom-usb4-x1-host.c` | X1 controller frontend, one-shot generations, ordered retirement, miscellaneous-reset restoration | First attach/read-write/safe removal passed; reliable reconnect remains unresolved |
+| `qcom-usb4-x1-host.c` | X1 controller frontend, one-shot generations, ordered retirement, miscellaneous-reset restoration | First attach/read-write/safe removal passed; the replug re-arm is patch 0001 in [experiments/omarchy1](../omarchy1/README.md) |
 | `root-port-fixup.c` | Built-in, exact-host early class/no-MSI fixup excerpt | Must be integrated into built-in PCI code, not a loadable fixup table |
 | `runtime/mount_guard.py` | Strict mount and parent propagation classifier | Used by managed eject; not permission to ignore foreign mounts |
 | `runtime/boot_evidence.py` | Current-boot EL1 kernel-journal proof independent of rolling dmesg | First-generation proof passed; second-generation filesystem gate not yet validated |
-| `runtime/eject_guard.py` | Waits up to 45 s for a transient namespace copy, such as the one systemd-hostnamed holds after Files starts it | **Installed for the next hardware test; not yet hardware-validated** |
+| `runtime/eject_guard.py` | Waits up to 45 s for a transient namespace copy, such as the one systemd-hostnamed holds after Files starts it | Hardware-validated on 23 September (boot f339cc52): waited 27 s, then ejected on the first click |
 
 The kernel sources are byte-for-byte extracts of the listed development
 checkpoints, not rewritten pseudocode. Some header comments still say

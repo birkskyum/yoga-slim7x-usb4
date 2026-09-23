@@ -1,11 +1,16 @@
 # Yoga Slim 7x USB4 development
 
-**22 September 2026 update:** experimental normal-EL1 Omarchy now has genuine
-DWC MSI-X, verified external read/write and a short ~2.6 GB/s read / ~2.8 GB/s
-write filesystem demonstration. Safe removal has passed; reliable reconnect
-and general plug-and-play remain unfinished. See the [Qualcomm guidance,
-results and limitations](docs/EL1-USB4-2026-09-22.md) and [selected actual
-implementation sources/tests](experiments/el1-pci0/README.md).
+**23 September 2026 update:** at EL1 on normal Omarchy, the experimental
+kernel now runs any USB4 NVMe drive with genuine DWC MSI-X through the
+standard NVMe driver. Files, Eject, replug and pulling the drive without
+Eject all work, and so does 64-bit DMA through the tunnel. Sleep works once
+per boot; a suspend after the router has been restarted still hangs. Only
+the left rear port runs, and this is still not a release. Qualcomm's own
+router driver is the path to mainline. See the
+[23 September report](docs/USB4-2026-09-23.md), the
+[22 September report with Qualcomm's MSI guidance](docs/EL1-USB4-2026-09-22.md),
+and the reference code in [experiments/el1-pci0](experiments/el1-pci0/README.md)
+and [experiments/omarchy1](experiments/omarchy1/README.md).
 
 The rest of this page describes the **historical v38 export**, not the current
 hardware-tested development kernel. The new source component is a partial
@@ -16,8 +21,9 @@ Snapdragon X1E80100). This publishes the source behind the v38 diagnostic
 checkpoint so others can inspect it, reproduce the software tests and build
 on the work.
 
-**This is not a working USB4 driver release or an installer. MSI-X delivery
-is still unresolved. Do not use it with valuable data.**
+**This is not a working USB4 driver release or an installer. Do not use it
+with valuable data.** At the v38 checkpoint MSI-X delivery was still
+unresolved; it has since been solved, as described above.
 
 On the development machine, the private v38 build negotiated USB4, created
 a PCIe tunnel, enumerated a LaCie Rugged SSD4 and read 4096 bytes into RAM.
@@ -31,7 +37,9 @@ not included. See [publication changes](docs/PROVENANCE.md).
 
 ## Start here
 
-- [Results and unresolved MSI-X route](docs/RESULTS.md)
+- [23 September report](docs/USB4-2026-09-23.md)
+- [22 September report: Qualcomm's MSI route and verified I/O](docs/EL1-USB4-2026-09-22.md)
+- [Historical v38 results](docs/RESULTS.md)
 - [Reconstruct and build](docs/REPRODUCE.md)
 - [Authorship and publication changes](docs/PROVENANCE.md)
 - [Safety and contribution rules](CONTRIBUTING.md)
@@ -51,10 +59,10 @@ python3 tools/review.py check
 python3 tools/review.py test
 ```
 
-The immediate missing piece is an authoritative description or working
-implementation of **USB4 PCI0's physical MSI route under EL1/Gunyah**.
-Correct Linux tables and successful software interrupt injection have not
-established that endpoint-originated MSI-X writes reach the ITS.
+At the v38 checkpoint the missing piece was **USB4 PCI0's physical MSI
+route under EL1/Gunyah**. It is solved: Qualcomm supplied the interrupt
+assignment for the DesignWare internal MSI receiver, and genuine MSI-X
+works (see the 22 September report).
 
 This snapshot builds on [Jim Martin's Glymur work](https://github.com/jdvmi00/glymur-usb4/tree/109b47c46634c65be22e588756e8bdd8142ac6cb),
 Konrad Dybcio's PHY work and their upstream dependencies. Existing authorship
