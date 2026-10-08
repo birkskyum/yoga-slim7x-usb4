@@ -1,5 +1,11 @@
 # Yoga Slim 7x USB4 development
 
+**8 October 2026 update:** the USB4 router's power domain can now be switched
+off and powers up again, so the always-on workaround is gone. It takes the
+PCIe tunnel reset released and the system clock's selector moved before the
+power-off. The suspend hang after a router restart is still there. See the
+[8 October report](docs/USB4-2026-10-08.md).
+
 **23 September 2026 update:** at EL1 on normal Omarchy, the experimental
 kernel now runs any USB4 NVMe drive with genuine DWC MSI-X through the
 standard NVMe driver. Files, Eject, replug and pulling the drive without
@@ -37,6 +43,7 @@ not included. See [publication changes](docs/PROVENANCE.md).
 
 ## Start here
 
+- [8 October report: the router's power domain](docs/USB4-2026-10-08.md)
 - [23 September report](docs/USB4-2026-09-23.md)
 - [22 September report: Qualcomm's MSI route and verified I/O](docs/EL1-USB4-2026-09-22.md)
 - [Historical v38 results](docs/RESULTS.md)

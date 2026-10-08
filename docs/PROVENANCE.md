@@ -1,5 +1,16 @@
 # Source provenance and publication changes
 
+## 8 October additions
+
+[`experiments/omarchy1`](../experiments/omarchy1/README.md) gains patches
+0011 to 0013, the four kernel files they change and the two test files that
+cover them, under the same owner permission. Its `export.json` records the
+new hashes and the private commit they come from. The build that ran on
+hardware was the same code with some comment sentences worded differently;
+no code line differs. The [8 October report](USB4-2026-10-08.md) describes
+the results. No firmware, boot image, disk identity, credential, raw
+capture, deployment script or private machine manifest is included.
+
 ## 23 September additions
 
 Two more reference components, under the same owner permission as the
