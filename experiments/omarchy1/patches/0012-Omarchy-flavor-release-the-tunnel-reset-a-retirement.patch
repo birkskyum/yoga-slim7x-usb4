@@ -1,0 +1,130 @@
+From ca5eac711f9009a9eace4d2054fbfc3cd6533085 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Thu, 8 Oct 2026 14:23:05 +0200
+Subject: [PATCH 12/13] Omarchy flavor: release the tunnel reset a retirement
+ holds before the router asks for its domain
+
+gcc_usb4_0_gdsc does not power up while GCC_PCIE_0_TUNNEL_BCR is
+asserted: GDSCR stops at 0x6822f800 and CFG_GDSCR at 0x050e0000, and
+gdsc.c reports "status stuck at 'off'". The platform retirement leaves
+that reset asserted, and the next start asked for the router's domain
+before the PCIe preparation released it, so every restart after a
+power-off failed.
+
+The start now releases a held tunnel reset first, in the Omarchy
+flavor's early branch, after the router's own resets and before the
+runtime resume. That covers the idle retirement and the Eject
+retirement, which hold it the same way.
+
+Hardware (Yoga Slim 7x, 8 October 2026): on a test kernel that also
+moved the clock selectors (next commit), the same stop, ten seconds
+without power and power-on worked with the reset released first and
+stuck without. This change without the next one still sticks.
+---
+ drivers/clk/qcom/gcc-x1e80100.c         |  5 +--
+ drivers/thunderbolt/qcom-usb4-x1-host.c |  4 +++
+ drivers/thunderbolt/qcom-usb4-x1-pcie.c | 47 +++++++++++++++++++++++++
+ drivers/thunderbolt/qcom-usb4-x1-pcie.h |  2 ++
+ 4 files changed, 56 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/clk/qcom/gcc-x1e80100.c b/drivers/clk/qcom/gcc-x1e80100.c
+index fa03ac7..9bf1a7b 100644
+--- a/drivers/clk/qcom/gcc-x1e80100.c
++++ b/drivers/clk/qcom/gcc-x1e80100.c
+@@ -6816,8 +6816,9 @@ static struct gdsc gcc_usb3_mp_ss1_phy_gdsc = {
+ 	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE,
+ };
+ 
+-/* Does not power up again while the router's resets are held ("status stuck
+- * at 'off'"); the router driver releases them before the domain is switched.
++/* Does not power up while GCC_PCIE_0_TUNNEL_BCR is asserted ("status stuck
++ * at 'off'"); the router driver releases that reset before it asks for the
++ * domain.
+  */
+ static struct gdsc gcc_usb4_0_gdsc = {
+ 	.gdscr = 0x9f004,
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index e6f01ec..b586772 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -1024,6 +1024,10 @@ static int x1_activate(struct x1_host *host)
+ 		ret = x1_restore_resets(host);
+ 		if (ret)
+ 			goto release;
++		/* Nor does it power up with the tunnel BCR the retirement holds. */
++		ret = qcom_usb4_x1_release_retired_reset(dev);
++		if (ret)
++			goto release;
+ 	}
+ 	ret = pm_runtime_resume_and_get(dev);
+ 	if (ret < 0) {
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.c b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+index ff5a67c..a9553d1 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+@@ -734,6 +734,53 @@ static int x1_pcie_release_retired_reset(struct x1_pcie_context *ctx)
+ 	return 0;
+ }
+ 
++/* gcc_usb4_0_gdsc does not power up while the tunnel BCR is asserted: held,
++ * the router's domain stays "stuck at 'off'"; released first, the same
++ * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it, so the
++ * router's next start releases it here, before it asks for its domain. Only
++ * the reset provider is touched. The lease is put again, which never asserts;
++ * the next preparation takes its own. Caller holds owner/lifecycle exclusion.
++ */
++int qcom_usb4_x1_release_retired_reset(struct device *owner)
++{
++	struct platform_device *pdev = NULL;
++	struct reset_control *reset;
++	struct device_node *np;
++	int ret = 0;
++
++	if (!owner)
++		return -EINVAL;
++	mutex_lock(&x1_pcie_lock);
++	if (!x1_pcie_reset_held)
++		goto out;
++	ret = -EBUSY;
++	if (x1_pcie)
++		goto out; /* An unretired context still owns the reset. */
++	ret = -ENODEV;
++	np = of_find_node_by_path(X1_PCIE_NODE);
++	if (np && of_device_is_compatible(np, X1_PCIE_COMPAT))
++		pdev = of_find_device_by_node(np);
++	of_node_put(np);
++	if (!pdev)
++		goto out;
++	reset = reset_control_get_exclusive(&pdev->dev, "tunnel");
++	if (IS_ERR_OR_NULL(reset)) {
++		ret = reset ? PTR_ERR(reset) : -ENODEV;
++		goto put;
++	}
++	ret = reset_control_deassert(reset);
++	reset_control_put(reset);
++	if (ret)
++		goto put;
++	msleep(5);
++	x1_pcie_reset_held = false;
++put:
++	put_device(&pdev->dev);
++out:
++	mutex_unlock(&x1_pcie_lock);
++	return ret;
++}
++
+ static int x1_pcie_prepare_probe(struct platform_device *pdev)
+ {
+ 	struct x1_pcie_context *ctx = x1_pcie;
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.h b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+index 03c959f..8a02f47 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.h
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.h
+@@ -145,5 +145,7 @@ int qcom_usb4_x1_retire_platform(struct device *owner, struct x1_pcie_state *sta
+ /* Omarchy flavor: the same release for a preparation that never connected. */
+ int qcom_usb4_x1_idle_retire_platform(struct device *owner, struct x1_pcie_state *state,
+ 				      int (*check_stopped)(void *), void *context);
++/* Omarchy flavor: release the tunnel BCR a retirement holds, before the router's domain. */
++int qcom_usb4_x1_release_retired_reset(struct device *owner);
+ 
+ #endif

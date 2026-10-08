@@ -734,6 +734,53 @@ static int x1_pcie_release_retired_reset(struct x1_pcie_context *ctx)
 	return 0;
 }
 
+/* gcc_usb4_0_gdsc does not power up while the tunnel BCR is asserted: held,
+ * the router's domain stays "stuck at 'off'"; released first, the same
+ * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it, so the
+ * router's next start releases it here, before it asks for its domain. Only
+ * the reset provider is touched. The lease is put again, which never asserts;
+ * the next preparation takes its own. Caller holds owner/lifecycle exclusion.
+ */
+int qcom_usb4_x1_release_retired_reset(struct device *owner)
+{
+	struct platform_device *pdev = NULL;
+	struct reset_control *reset;
+	struct device_node *np;
+	int ret = 0;
+
+	if (!owner)
+		return -EINVAL;
+	mutex_lock(&x1_pcie_lock);
+	if (!x1_pcie_reset_held)
+		goto out;
+	ret = -EBUSY;
+	if (x1_pcie)
+		goto out; /* An unretired context still owns the reset. */
+	ret = -ENODEV;
+	np = of_find_node_by_path(X1_PCIE_NODE);
+	if (np && of_device_is_compatible(np, X1_PCIE_COMPAT))
+		pdev = of_find_device_by_node(np);
+	of_node_put(np);
+	if (!pdev)
+		goto out;
+	reset = reset_control_get_exclusive(&pdev->dev, "tunnel");
+	if (IS_ERR_OR_NULL(reset)) {
+		ret = reset ? PTR_ERR(reset) : -ENODEV;
+		goto put;
+	}
+	ret = reset_control_deassert(reset);
+	reset_control_put(reset);
+	if (ret)
+		goto put;
+	msleep(5);
+	x1_pcie_reset_held = false;
+put:
+	put_device(&pdev->dev);
+out:
+	mutex_unlock(&x1_pcie_lock);
+	return ret;
+}
+
 static int x1_pcie_prepare_probe(struct platform_device *pdev)
 {
 	struct x1_pcie_context *ctx = x1_pcie;

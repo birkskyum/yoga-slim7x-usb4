@@ -145,5 +145,7 @@ int qcom_usb4_x1_retire_platform(struct device *owner, struct x1_pcie_state *sta
 /* Omarchy flavor: the same release for a preparation that never connected. */
 int qcom_usb4_x1_idle_retire_platform(struct device *owner, struct x1_pcie_state *state,
 				      int (*check_stopped)(void *), void *context);
+/* Omarchy flavor: release the tunnel BCR a retirement holds, before the router's domain. */
+int qcom_usb4_x1_release_retired_reset(struct device *owner);
 
 #endif

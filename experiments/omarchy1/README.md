@@ -1,9 +1,12 @@
 # General USB4 NVMe flavor (omarchy1) reference code
 
-Published with the owner's permission, 23 September 2026. This is the code
-behind the [23 September report](../../docs/USB4-2026-09-23.md): any USB4 NVMe
-drive through the standard NVMe driver, Files integration, Eject, pulling a
-drive without Eject, and powering the router down for sleep. It is **not a
+Published with the owner's permission, 23 September 2026, and updated on
+8 October 2026 with patches 0011 to 0013. This is the code behind the
+[23 September report](../../docs/USB4-2026-09-23.md) and the
+[8 October report](../../docs/USB4-2026-10-08.md): any USB4 NVMe drive through
+the standard NVMe driver, Files integration, Eject, pulling a drive without
+Eject, and powering the router down for sleep, with a power domain that can
+go off and come back. It is **not a
 release, installer or general USB4 driver**. It covers router 0 (the left rear
 port) of the Lenovo Yoga Slim 7x only, and Qualcomm's own router driver is the
 path to mainline.
@@ -17,12 +20,12 @@ identities, deployment scripts and private captures are not included.
 | Path | Content |
 |---|---|
 | `patches/0001` | Replug after a missed cable e-marker, as a diff against `el1-pci0`'s host source |
-| `patches/0002` to `0010` | The general flavor as nine commits on top of that, with their original messages |
-| `kernel/` | The full changed files after patch 0010, for reading and for the tests |
+| `patches/0002` to `0013` | The general flavor as twelve commits on top of that, with their original messages |
+| `kernel/` | The full changed files after patch 0013, for reading and for the tests |
 | `base/` | The pre-0002 versions of four files, which one test compares against |
 | `runtime/usb4_x1d.py`, `omarchy-usb4-sleep` | The service and its systemd-sleep hook |
 | `runtime/test_usb4_x1d.py` | 50 service tests against a simulated router |
-| `tests/` | 25 tests that compile the real kernel functions against mocks, plus a publication check |
+| `tests/` | 31 tests that compile the real kernel functions against mocks, plus a publication check |
 | `export.json` | Hashes of every exported file, its private source and any path adaptation |
 
 The kernel files and patches are byte-for-byte exports. Three test files had
@@ -44,7 +47,10 @@ desktop user it should notify and unmount for.
 | 0007 | Power an idle router down before system sleep, and let a retired session suspend | Hardware: first-session sleep works; see the report for the restart case |
 | 0008 | Retire a router whose drive was pulled without Eject, without touching the gone device | Hardware: pull while idle and pull mid-write, no SError, journal replay on replug |
 | 0009 | Accept a deferred runtime suspend in the idle power-down | Hardware: the power-down failed with -EBUSY before, passes after |
-| 0010 | Keep `gcc_usb4_0_gdsc` on, and start the router only when it reports powered | Hardware: power-down, restart and prepare work; without it the domain never powers on again |
+| 0010 | Keep `gcc_usb4_0_gdsc` on, and start the router only when it reports powered | Hardware: power-down, restart and prepare work. The always-on part is replaced by 0011 to 0013; the powered check stays |
+| 0011 | Let `gcc_usb4_0_gdsc` go off, with none of the router's resets held across the power-off | Hardware: not enough alone, the domain went off and did not power on again |
+| 0012 | Release the tunnel reset a retirement holds before the router asks for its domain | Hardware: after the same stop and ten seconds off, the power-on completed with the reset released and stuck without. Not enough alone (boot 5023f1ed) |
+| 0013 | Move the PHY clock selectors before the domain goes off | Hardware: a switchable test kernel stuck without the move (boot 59a4d4ab); a build of 0011 to 0013 restarted the router three times in one boot (boot 69f50f94) |
 
 The service prepares the router while the port is empty, connects on
 attach, leaves mounting to udisks, and runs the Eject chain once the drive's
@@ -58,7 +64,10 @@ restart it adopts an idle or retired router instead of failing.
   controller to USB 2 and disables DisplayPort, because the router holds the
   PHY while it waits. Qualcomm's per-attach model avoids that.
 - Sleep after the router has been restarted in the same boot never returns
-  (2 out of 2). First-session sleep works. Details in the report.
+  (2 out of 2, and again on 8 October). First-session sleep works. Details in
+  the reports.
+- A drive connecting after a router restart was run on the test kernel that
+  led to 0012 and 0013, not yet on a build of these patches.
 - Hibernation is untested and expected to stop USB4 until a restart.
 - The router firmware is required and not included; the report says where
   it comes from.

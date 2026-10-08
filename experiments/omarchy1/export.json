@@ -6,9 +6,9 @@
   "public_parent": "fb91281ae218116813331ca561613b1094abcb26",
   "private_sources": {
     "harness": "293ee59d0c02969f98f949c536caf3be5fb06767",
-    "omarchy": "f55279c6ba2632414d84681cae26000670787ccd"
+    "omarchy": "830ce6227458e9d01a0e6d88c9263a2399b88967"
   },
-  "hardware_scope": "Read docs/USB4-2026-09-23.md. Router 0 (left rear port) only; sleep after a router restart hangs.",
+  "hardware_scope": "Read docs/USB4-2026-09-23.md and docs/USB4-2026-10-08.md. Router 0 (left rear port) only; sleep after a router restart hangs.",
   "private_payloads_included": false,
   "files": [
     {
@@ -82,24 +82,45 @@
       "changes": []
     },
     {
+      "export": "patches/0011-Omarchy-flavor-let-gcc_usb4_0_gdsc-go-off-with-no-ro.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "5f8eb308b47e725ce8227819b8c091bb8e5fac9bf3ad9c2b5dc661c79ab4e13c",
+      "public_sha256": "5f8eb308b47e725ce8227819b8c091bb8e5fac9bf3ad9c2b5dc661c79ab4e13c",
+      "changes": []
+    },
+    {
+      "export": "patches/0012-Omarchy-flavor-release-the-tunnel-reset-a-retirement.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "8ac8f2927c8ac849602a4cf4f9460e9449b94dbeed67ed4d8b200cafa0833fee",
+      "public_sha256": "8ac8f2927c8ac849602a4cf4f9460e9449b94dbeed67ed4d8b200cafa0833fee",
+      "changes": []
+    },
+    {
+      "export": "patches/0013-Omarchy-flavor-move-the-PHY-clock-selectors-before-g.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "b9603cd3335201f2705ffbfc01e08e685464ca53e3324cf7f31e9708754d8400",
+      "public_sha256": "b9603cd3335201f2705ffbfc01e08e685464ca53e3324cf7f31e9708754d8400",
+      "changes": []
+    },
+    {
       "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-host.c",
       "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-host.c",
-      "source_sha256": "f4bcf623598bb0e466d5e0f6cee586d44c26b988410d15abee727d541ea26168",
-      "public_sha256": "f4bcf623598bb0e466d5e0f6cee586d44c26b988410d15abee727d541ea26168",
+      "source_sha256": "d36f4c23414bc8685813737dd78a965dfe6a69a410210fbfb20cd99f52bad79e",
+      "public_sha256": "d36f4c23414bc8685813737dd78a965dfe6a69a410210fbfb20cd99f52bad79e",
       "changes": []
     },
     {
       "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.c",
       "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-pcie.c",
-      "source_sha256": "db67f846615a63a2165600b8cfabc2f5a85df6a2485e3d9aeaf8126d932569a0",
-      "public_sha256": "db67f846615a63a2165600b8cfabc2f5a85df6a2485e3d9aeaf8126d932569a0",
+      "source_sha256": "ca45ec18cd86db11545010293863cae8a57bad1f554981b6d2a96f4b17f550a8",
+      "public_sha256": "ca45ec18cd86db11545010293863cae8a57bad1f554981b6d2a96f4b17f550a8",
       "changes": []
     },
     {
       "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.h",
       "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-pcie.h",
-      "source_sha256": "2e16e06bf725b98cf00b838629493df933b05e50b0d2a1e691fdb4dd261c58d1",
-      "public_sha256": "2e16e06bf725b98cf00b838629493df933b05e50b0d2a1e691fdb4dd261c58d1",
+      "source_sha256": "fcce89a31bcc0819cbc115a6aa1e0b2785760c22e6ec2f0f0c1fa55b9ea436cb",
+      "public_sha256": "fcce89a31bcc0819cbc115a6aa1e0b2785760c22e6ec2f0f0c1fa55b9ea436cb",
       "changes": []
     },
     {
@@ -133,8 +154,8 @@
     {
       "export": "kernel/drivers/clk/qcom/gcc-x1e80100.c",
       "source_checkpoint": "src omarchy:drivers/clk/qcom/gcc-x1e80100.c",
-      "source_sha256": "fc6e0bc8844e694dfd9843bf0c3ab8fe3611cb7ca82bbbe6cefb6d147f9bd84a",
-      "public_sha256": "fc6e0bc8844e694dfd9843bf0c3ab8fe3611cb7ca82bbbe6cefb6d147f9bd84a",
+      "source_sha256": "0fd8e3fb34cb3bedb9e62b571578dbf9dc552223afc31b6fb794b4a1fb9ce066",
+      "public_sha256": "0fd8e3fb34cb3bedb9e62b571578dbf9dc552223afc31b6fb794b4a1fb9ce066",
       "changes": []
     },
     {
@@ -231,8 +252,8 @@
     {
       "export": "tests/test_idle_power_stop.py",
       "source_checkpoint": "tests/test_idle_power_stop.py",
-      "source_sha256": "ef4aa685a7b1789dd7725d2c8f0140c169a79a002bc118e46b07e22c55e80879",
-      "public_sha256": "ef4aa685a7b1789dd7725d2c8f0140c169a79a002bc118e46b07e22c55e80879",
+      "source_sha256": "472837bee0abf3d027fe04a5c97658b9010f094a66f0b49dae1e8e3c7eaff29d",
+      "public_sha256": "472837bee0abf3d027fe04a5c97658b9010f094a66f0b49dae1e8e3c7eaff29d",
       "changes": []
     },
     {
@@ -245,9 +266,14 @@
     {
       "export": "tests/test_power_domain.py",
       "source_checkpoint": "tests/test_power_domain.py",
-      "source_sha256": "eb9609d480704ee6ce5266cdc3cae4912ca783f94bb47ca98d83c7ca93b4af06",
-      "public_sha256": "eb9609d480704ee6ce5266cdc3cae4912ca783f94bb47ca98d83c7ca93b4af06",
+      "source_sha256": "f0daacbfc5619d7a4140cc403746bb9c8aae53205f319fcfd253a46df04626f2",
+      "public_sha256": "f0daacbfc5619d7a4140cc403746bb9c8aae53205f319fcfd253a46df04626f2",
       "changes": []
     }
+  ],
+  "updated": "2026-10-08",
+  "updated_public_parent": "805a55048d60ee1339850dd93beb00c0d06bb695",
+  "notes": [
+    "Patches 0011 to 0013 ran on hardware (8 October 2026) as a build of the same code with some comment sentences worded differently; no code line differs and no line moved."
   ]
 }
