@@ -135,6 +135,9 @@ struct x1_power_stop {
 	bool icc_released, gcc_released, clocks_released, runtime_released;
 	u32 mcu_control, host_control, reset_requests;
 	unsigned int resets_asserted;
+	/* Omarchy flavor: the resets released again before the domain goes off. */
+	u32 release_requests;
+	unsigned int resets_released;
 	const char *stage;
 	int error;
 };
@@ -163,6 +166,8 @@ struct x1_port {
 	enum typec_orientation orientation;
 	u64 event_sequence, disconnect_sequence, next_generation;
 	bool module_held, runtime_enabled;
+	/* The last stop released its resets before power-off (Omarchy flavor). */
+	bool baseline_released;
 };
 
 struct x1_host {
@@ -904,11 +909,23 @@ static int x1_restore_resets(struct x1_host *host)
 	int ret;
 
 	lockdep_assert_held(&host->lifecycle_lock);
+	/* The harness restores with the domain held on; the Omarchy flavor
+	 * restores before it asks for the domain at all.
+	 */
 	if (!x1_managed || host->generation <= 1 || !host->gcc ||
-	    !host->runtime_held || host->clocks_on || host->activated ||
+	    host->runtime_held == x1_general || host->clocks_on || host->activated ||
 	    host->reset_restore_attempted)
 		return -EPERM;
 	ret = x1_gcc_usb4_reset_state(host->gcc, &host->reset_restore_state);
+	if (!ret && x1_general && !host->reset_restore_state &&
+	    READ_ONCE(host->port->baseline_released)) {
+		/* The previous stop already released them before its power-off;
+		 * nothing was attempted here, so a later failure re-holds nothing.
+		 */
+		WRITE_ONCE(host->port->baseline_released, false);
+		host->reset_restore_complete = true;
+		return 0;
+	}
 	if (ret || host->reset_restore_state != GENMASK(10, 0)) {
 		ret = ret ?: -EIO;
 		goto fail;
@@ -993,9 +1010,32 @@ static int x1_activate(struct x1_host *host)
 			goto stopped;
 		host->port->runtime_enabled = true;
 	}
+	if (x1_general && host->generation > 1) {
+		/* Omarchy flavor: gcc_usb4_0_gdsc is never asked to power on with
+		 * a stop's resets held, so return to the released baseline before
+		 * the domain is asked for. GCC provider access only.
+		 */
+		host->gcc = x1_gcc_usb4_get(dev, 0);
+		if (IS_ERR(host->gcc)) {
+			ret = PTR_ERR(host->gcc);
+			host->gcc = NULL;
+			goto stopped;
+		}
+		ret = x1_restore_resets(host);
+		if (ret)
+			goto release;
+		/* Nor does it power up with the tunnel BCR the retirement holds. */
+		ret = qcom_usb4_x1_release_retired_reset(dev);
+		if (ret)
+			goto release;
+	}
 	ret = pm_runtime_resume_and_get(dev);
-	if (ret < 0)
+	if (ret < 0) {
+		/* Only the Omarchy flavor holds anything yet: its early lease. */
+		if (host->gcc)
+			goto release;
 		goto stopped;
+	}
 	host->runtime_held = true;
 	ret = icc_set_bw(host->apps, 0, MBps_to_icc(40));
 	if (ret)
@@ -1003,7 +1043,7 @@ static int x1_activate(struct x1_host *host)
 	ret = icc_set_bw(host->ddr, 0, MBps_to_icc(5000));
 	if (ret)
 		goto release;
-	if (host->generation > 1) {
+	if (!x1_general && host->generation > 1) {
 		/* A renewed owner starts from our asserted stop baseline, not the
 		 * first cold boot's firmware baseline. The lease itself enables no
 		 * RX clock and accesses no router register.
@@ -1780,6 +1820,44 @@ static ssize_t host_quiesce_state_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(host_quiesce_state);
 
+/* Omarchy flavor. No router reset is held while gcc_usb4_0_gdsc is off: its
+ * power-up has only been seen to work from the released cold-boot baseline
+ * (and needs two more things, see x1_activate()). Return to it before the
+ * runtime vote goes, under the conditions x1_restore_resets() was proven with:
+ * domain on, clocks off, reset provider and GCC readback only, no router MMIO.
+ * A failure leaves the runtime vote held, so the domain stays on.
+ */
+static int x1_stop_release_resets(struct x1_host *host)
+{
+	struct x1_power_stop *s = &host->power_stop;
+	struct x1_gcc_usb4 *gcc;
+	unsigned int i;
+	int ret;
+
+	if (host->gcc || host->clocks_on || !host->runtime_held ||
+	    s->resets_asserted != ARRAY_SIZE(host->resets) || s->resets_released)
+		return -EPERM;
+	gcc = x1_gcc_usb4_get(host->dev, 0);
+	if (IS_ERR(gcc))
+		return PTR_ERR(gcc);
+	/* Never bulk deassert: its error rollback would assert blocks again. */
+	for (i = 0; i < ARRAY_SIZE(host->resets); i++) {
+		ret = reset_control_deassert(host->resets[i].rstc);
+		if (ret)
+			goto put;
+		s->resets_released++;
+	}
+	usleep_range(100, 120);
+	ret = x1_gcc_usb4_reset_state(gcc, &s->release_requests);
+	if (!ret && s->release_requests)
+		ret = -EIO;
+put:
+	x1_gcc_usb4_put(gcc);
+	if (!ret)
+		WRITE_ONCE(host->port->baseline_released, true);
+	return ret;
+}
+
 /* Lifecycle/Type-C locks held. All endpoint, tunnel and ring admission has
  * already closed permanently. Do not read router/endpoint MMIO after reset.
  * Request-bit readback is not an MCU halt or global DMA-idle acknowledgement:
@@ -2193,6 +2271,10 @@ static int x1_idle_power_stop_run(struct x1_host *host)
 	clk_bulk_disable_unprepare(ARRAY_SIZE(host->clocks), host->clocks);
 	host->clocks_on = false;
 	s->clocks_released = true;
+	s->stage = "reset-release";
+	ret = x1_stop_release_resets(host);
+	if (ret)
+		goto fail;
 	s->stage = "runtime-vote-release";
 	ret = pm_runtime_put_sync(host->dev);
 	host->runtime_held = false;
@@ -2227,7 +2309,9 @@ static int x1_idle_owner_stopped(void *context)
 	    !host->qnhi.retained_stop_attempted || !host->qnhi.retained_irq_disabled ||
 	    host->qnhi.accept_rearm || !s->attempted || !s->finished || s->error ||
 	    !s->mcu_request_cleared || s->resets_asserted != ARRAY_SIZE(host->resets) ||
-	    s->reset_requests != GENMASK(10, 0) || !s->rx_reference || !s->phy_off ||
+	    s->reset_requests != GENMASK(10, 0) ||
+	    s->resets_released != ARRAY_SIZE(host->resets) || s->release_requests ||
+	    !s->rx_reference || !s->phy_off ||
 	    !s->phy_exited || !s->route_cleared || !s->memory_force_cleared ||
 	    !s->icc_released || !s->gcc_released || !s->clocks_released ||
 	    !s->runtime_released || host->gcc || host->clocks_on || host->phy_on ||
@@ -2682,12 +2766,13 @@ static ssize_t power_quiesce_state_show(struct device *dev,
 	if (!mutex_trylock(&host->lifecycle_lock))
 		return sysfs_emit(buf, "busy=1 snapshot=unavailable\n");
 	len = sysfs_emit(buf,
-		"busy=0 enabled=%u attempted=%u complete=%u error=%d stage=%s mcu_request_cleared=%u mcu_control=%08x host_control=%08x resets=%u reset_requests=%08x rx_reference=%u phy_off=%u phy_exited=%u route_cleared=%u memory_force_cleared=%u icc_released=%u gcc_released=%u clocks_released=%u runtime_released=%u dma_retained=%u physical_eject=0 reconnect=0 cached=1\n",
+		"busy=0 enabled=%u attempted=%u complete=%u error=%d stage=%s mcu_request_cleared=%u mcu_control=%08x host_control=%08x resets=%u reset_requests=%08x rx_reference=%u phy_off=%u phy_exited=%u route_cleared=%u memory_force_cleared=%u icc_released=%u gcc_released=%u clocks_released=%u resets_released=%u release_requests=%08x runtime_released=%u dma_retained=%u physical_eject=0 reconnect=0 cached=1\n",
 		x1_power_quiesce, s->attempted, s->finished, s->error, s->stage ?: "none",
 		s->mcu_request_cleared, s->mcu_control, s->host_control,
 		s->resets_asserted, s->reset_requests, s->rx_reference,
 		s->phy_off, s->phy_exited, s->route_cleared, s->memory_force_cleared,
-		s->icc_released, s->gcc_released, s->clocks_released, s->runtime_released,
+		s->icc_released, s->gcc_released, s->clocks_released,
+		s->resets_released, s->release_requests, s->runtime_released,
 		!(host->pcie.nvme_resources_retired && host->pcie.receiver.released &&
 		  host->control_retire.finished));
 	mutex_unlock(&host->lifecycle_lock);

@@ -6816,8 +6816,11 @@ static struct gdsc gcc_usb3_mp_ss1_phy_gdsc = {
 	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE,
 };
 
-/* Always on: once switched off after a router stop it does not power up
- * again ("status stuck at 'off'"), even with no USB4 device ever connected.
+/* Sticks at off ("status stuck at 'off'") in two cases. While
+ * GCC_PCIE_0_TUNNEL_BCR is asserted: the router driver releases that reset
+ * before it asks for the domain. And after it went off with the system
+ * clock's selector on 2, where gating that clock leaves it:
+ * x1_usb4_0_gdsc_power_off() below moves the selectors first.
  */
 static struct gdsc gcc_usb4_0_gdsc = {
 	.gdscr = 0x9f004,
@@ -6828,7 +6831,7 @@ static struct gdsc gcc_usb4_0_gdsc = {
 		.name = "gcc_usb4_0_gdsc",
 	},
 	.pwrsts = PWRSTS_OFF_ON,
-	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE | ALWAYS_ON,
+	.flags = POLL_CFG_GDSCR | RETAIN_FF_ENABLE,
 };
 
 static struct gdsc gcc_usb4_1_gdsc = {
@@ -7790,6 +7793,68 @@ static void x1_usb4_gcc_forget(void *unused)
 	x1_usb4_gcc_device = NULL;
 }
 
+/*
+ * Where the PHY clock selectors have to be when gcc_usb4_0_gdsc goes off. The
+ * phy-mux helper leaves the system clock's selector on 2 when the clock is
+ * gated, which on this selector is a PHY clock, and the domain then does not
+ * power up again; from 0, the internal source, it does.
+ */
+static const struct {
+	struct clk_regmap_phy_mux *mux;
+	bool zero;
+} x1_usb4_0_selectors[] = {
+	{ &gcc_usb4_0_phy_sys_clk_src, true },
+	{ &gcc_usb4_0_phy_dp0_clk_src, true },
+	{ &gcc_usb4_0_phy_dp1_clk_src, true },
+	{ &gcc_usb4_0_phy_p2rr2p_pipe_clk_src, false },
+};
+static int (*x1_usb4_0_gdsc_off)(struct generic_pm_domain *domain);
+
+static void x1_usb4_0_select(struct clk_hw *hw, bool zero)
+{
+	if (zero)
+		clk_regmap_phy_mux_ops.enable(hw);
+	else
+		clk_regmap_phy_mux_ops.disable(hw);
+}
+
+static int x1_usb4_0_gdsc_power_off(struct generic_pm_domain *domain)
+{
+	const struct clk_ops *ops = &clk_regmap_phy_mux_ops;
+	struct clk_hw *hw;
+	u32 moved = 0;
+	unsigned int i;
+	int ret = 0;
+
+	/* A held selector on a PHY clock means a consumer still runs: stay on. */
+	for (i = 0; i < ARRAY_SIZE(x1_usb4_0_selectors); i++) {
+		hw = &x1_usb4_0_selectors[i].mux->clkr.hw;
+		if (!!ops->is_enabled(hw) != x1_usb4_0_selectors[i].zero && clk_hw_is_prepared(hw))
+			return -EBUSY;
+	}
+	for (i = 0; i < ARRAY_SIZE(x1_usb4_0_selectors); i++) {
+		hw = &x1_usb4_0_selectors[i].mux->clkr.hw;
+		if (!!ops->is_enabled(hw) == x1_usb4_0_selectors[i].zero)
+			continue;
+		x1_usb4_0_select(hw, x1_usb4_0_selectors[i].zero);
+		moved |= BIT(i);
+		if (!!ops->is_enabled(hw) != x1_usb4_0_selectors[i].zero) {
+			ret = -EIO;
+			break;
+		}
+	}
+	if (!ret)
+		ret = x1_usb4_0_gdsc_off(domain);
+	if (ret) {
+		/* The domain stays on: leave the selectors as they were found. */
+		for (i = 0; i < ARRAY_SIZE(x1_usb4_0_selectors); i++)
+			if (moved & BIT(i))
+				x1_usb4_0_select(&x1_usb4_0_selectors[i].mux->clkr.hw,
+						 !x1_usb4_0_selectors[i].zero);
+	}
+	return ret;
+}
+
 static int gcc_x1e80100_probe(struct platform_device *pdev)
 {
 	struct regmap *regmap;
@@ -7824,6 +7889,8 @@ static int gcc_x1e80100_probe(struct platform_device *pdev)
 	ret = qcom_cc_really_probe(&pdev->dev, &gcc_x1e80100_desc, regmap);
 	if (ret)
 		return ret;
+	x1_usb4_0_gdsc_off = gcc_usb4_0_gdsc.pd.power_off;
+	gcc_usb4_0_gdsc.pd.power_off = x1_usb4_0_gdsc_power_off;
 	{
 		guard(mutex)(&x1_usb4_gcc_lock);
 
