@@ -50,7 +50,7 @@ desktop user it should notify and unmount for.
 | 0010 | Keep `gcc_usb4_0_gdsc` on, and start the router only when it reports powered | Hardware: power-down, restart and prepare work. The always-on part is replaced by 0011 to 0013; the powered check stays |
 | 0011 | Let `gcc_usb4_0_gdsc` go off, with none of the router's resets held across the power-off | Hardware: not enough alone, the domain went off and did not power on again |
 | 0012 | Release the tunnel reset a retirement holds before the router asks for its domain | Hardware: after the same stop and ten seconds off, the power-on completed with the reset released and stuck without. Not enough alone (boot 5023f1ed) |
-| 0013 | Move the PHY clock selectors before the domain goes off | Hardware: a switchable test kernel stuck without the move (boot 59a4d4ab); a build of 0011 to 0013 restarted the router three times in one boot (boot 69f50f94) |
+| 0013 | Move the PHY clock selectors before the domain goes off | Hardware: a switchable test kernel stuck without the move (boot 59a4d4ab); a build of 0011 to 0013 restarted the router three times in one boot, and a drive then connected, ejected and reconnected (boot 69f50f94) |
 
 The service prepares the router while the port is empty, connects on
 attach, leaves mounting to udisks, and runs the Eject chain once the drive's
@@ -66,8 +66,6 @@ restart it adopts an idle or retired router instead of failing.
 - Sleep after the router has been restarted in the same boot never returns
   (2 out of 2, and again on 8 October). First-session sleep works. Details in
   the reports.
-- A drive connecting after a router restart was run on the test kernel that
-  led to 0012 and 0013, not yet on a build of these patches.
 - Hibernation is untested and expected to stop USB4 until a restart.
 - The router firmware is required and not included; the report says where
   it comes from.
