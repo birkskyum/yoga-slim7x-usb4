@@ -1012,8 +1012,9 @@ static int x1_activate(struct x1_host *host)
 	}
 	if (x1_general && host->generation > 1) {
 		/* Omarchy flavor: gcc_usb4_0_gdsc is never asked to power on with
-		 * a stop's resets held, so return to the released baseline before
-		 * the domain is asked for. GCC provider access only.
+		 * a stop's resets or the tunnel BCR held. Every retirement
+		 * releases both before its vote goes, so these two normally find
+		 * nothing held. GCC provider access only.
 		 */
 		host->gcc = x1_gcc_usb4_get(dev, 0);
 		if (IS_ERR(host->gcc)) {
@@ -1024,7 +1025,6 @@ static int x1_activate(struct x1_host *host)
 		ret = x1_restore_resets(host);
 		if (ret)
 			goto release;
-		/* Nor does it power up with the tunnel BCR the retirement holds. */
 		ret = qcom_usb4_x1_release_retired_reset(dev);
 		if (ret)
 			goto release;
@@ -2139,6 +2139,28 @@ static int x1_platform_owner_stopped(void *context)
 	return 0;
 }
 
+/* Omarchy flavor: an Eject or a pulled retirement ends where the idle
+ * power-down ends, with the stop's resets and the tunnel BCR released and no
+ * runtime vote, so that gcc_usb4_0_gdsc can go off and a system resume can
+ * power it on by itself. Order and conditions are the ones the next start
+ * released them under: domain on, clocks off, the router's resets first.
+ * Caller holds the vote that kept the domain on; a failure retains it.
+ */
+static int x1_retired_release(struct x1_host *host)
+{
+	int ret;
+
+	host->runtime_held = true;
+	ret = x1_stop_release_resets(host);
+	if (!ret)
+		ret = qcom_usb4_x1_release_retired_reset(host->dev);
+	if (ret)
+		return ret;
+	pm_runtime_put_sync(host->dev);
+	host->runtime_held = false;
+	return 0;
+}
+
 static int x1_retire_session(struct x1_host *host)
 {
 	struct tb_nhi *nhi = &host->qnhi.nhi;
@@ -2146,8 +2168,16 @@ static int x1_retire_session(struct x1_host *host)
 
 	if (ret)
 		return ret;
+	/* Omarchy flavor: the platform retirement drops the receiver's forbid,
+	 * the last vote on the router's domain. Keep the domain on until what
+	 * the stop still holds is released.
+	 */
+	if (x1_general)
+		pm_runtime_get_noresume(host->dev);
 	ret = qcom_usb4_x1_retire_platform(host->dev, &host->pcie,
 					  x1_platform_owner_stopped, host);
+	if (!ret && x1_general)
+		ret = x1_retired_release(host);
 	if (ret)
 		return ret;
 	/* Final domain release completed: no late ctl/domain callback can see
@@ -2504,6 +2534,13 @@ static ssize_t idle_retire_once_store(struct device *dev,
 	host->idle_retire_stage = "platform-retire";
 	ret = qcom_usb4_x1_idle_retire_platform(dev, &host->pcie,
 						x1_idle_platform_owner_stopped, host);
+	if (ret)
+		goto done;
+	/* A system resume powers gcc_usb4_0_gdsc on without this driver, so the
+	 * tunnel BCR is not left held once the router's domain may go off.
+	 */
+	host->idle_retire_stage = "tunnel-reset-release";
+	ret = qcom_usb4_x1_release_retired_reset(dev);
 	if (ret)
 		goto done;
 	devm_kfree(host->dev, nhi->tx_rings);

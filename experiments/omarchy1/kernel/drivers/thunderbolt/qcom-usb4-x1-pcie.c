@@ -736,10 +736,12 @@ static int x1_pcie_release_retired_reset(struct x1_pcie_context *ctx)
 
 /* gcc_usb4_0_gdsc does not power up while the tunnel BCR is asserted: held,
  * the router's domain stays "stuck at 'off'"; released first, the same
- * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it, so the
- * router's next start releases it here, before it asks for its domain. Only
- * the reset provider is touched. The lease is put again, which never asserts;
- * the next preparation takes its own. Caller holds owner/lifecycle exclusion.
+ * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it, and
+ * releases it here once its context is gone, because a system resume powers
+ * the domain on by itself. The router's start calls this again before it asks
+ * for its domain. Only the reset provider is touched. The lease is put again,
+ * which never asserts; the next preparation takes its own. Caller holds
+ * owner/lifecycle exclusion.
  */
 int qcom_usb4_x1_release_retired_reset(struct device *owner)
 {
@@ -2190,8 +2192,8 @@ out:
 
 /* Omarchy flavor: release a PCIe0 preparation that never trained, allocated a
  * bridge or receiver, or took the receiver's module pin. Same provider order
- * as qcom_usb4_x1_retire_platform(); the tunnel BCR stays asserted for the
- * next generation's preparation.
+ * as qcom_usb4_x1_retire_platform(); the tunnel BCR is still asserted on
+ * return, and the caller releases it before the router's domain goes off.
  */
 int qcom_usb4_x1_idle_retire_platform(struct device *owner, struct x1_pcie_state *state,
 				      int (*check_stopped)(void *), void *context)

@@ -1,0 +1,131 @@
+From 94682e9cbc8cd2954e6062a2e64742c1e44786d4 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Fri, 9 Oct 2026 10:52:56 +0200
+Subject: [PATCH 15/15] Omarchy flavor: end an Eject or pulled retirement with
+ the router's resets and the tunnel reset released and its domain off
+
+A system resume powers gcc_usb4_0_gdsc on by itself, and that power-on
+sticks while GCC_PCIE_0_TUNNEL_BCR is asserted. The idle power-down
+already releases the tunnel reset before its vote goes. An Eject and a
+pulled retirement still ended with the eleven router resets and the
+tunnel reset held until the next start, so a sleep with a drive
+connected, or after an Eject, would stick the same way.
+
+After an Eject the router's domain also stayed on. The platform
+retirement drops the receiver's forbid, which queues a suspend, and
+cancels it again with its barrier. genpd counted no power-off between
+an Eject and the next start (Yoga Slim 7x, 9 October 2026, boot
+06d4e5e7).
+
+x1_retire_session() now takes its own vote before the platform
+retirement, releases the router's resets and then the tunnel reset
+under it, and drops it, so every retirement ends in the state the idle
+power-down ends in. The order and conditions of the two releases are
+the ones the next start used (domain on, clocks off, resets first). A
+failure keeps the vote and the session unretired. The start keeps both
+calls and normally finds nothing held. The harness flavor is unchanged.
+
+Hardware (boot e4536699). After an Eject the domain went off and the
+router suspended, and unplugging brought the router back on its next
+session, the first power-on after a session with a drive. A suspend
+through systemd with the drive mounted ejected it, slept and woke with
+no warning, and the drive connected again after a replug. A pulled
+retirement ends in the same function and was not run with this change.
+---
+ drivers/thunderbolt/qcom-usb4-x1-host.c | 36 ++++++++++++++++++++++---
+ drivers/thunderbolt/qcom-usb4-x1-pcie.c | 12 ++++-----
+ 2 files changed, 39 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index fa64a8f..eab5146 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -1012,8 +1012,9 @@ static int x1_activate(struct x1_host *host)
+ 	}
+ 	if (x1_general && host->generation > 1) {
+ 		/* Omarchy flavor: gcc_usb4_0_gdsc is never asked to power on with
+-		 * a stop's resets held, so return to the released baseline before
+-		 * the domain is asked for. GCC provider access only.
++		 * a stop's resets or the tunnel BCR held. Every retirement
++		 * releases both before its vote goes, so these two normally find
++		 * nothing held. GCC provider access only.
+ 		 */
+ 		host->gcc = x1_gcc_usb4_get(dev, 0);
+ 		if (IS_ERR(host->gcc)) {
+@@ -1024,7 +1025,6 @@ static int x1_activate(struct x1_host *host)
+ 		ret = x1_restore_resets(host);
+ 		if (ret)
+ 			goto release;
+-		/* Nor does it power up with the tunnel BCR the retirement holds. */
+ 		ret = qcom_usb4_x1_release_retired_reset(dev);
+ 		if (ret)
+ 			goto release;
+@@ -2139,6 +2139,28 @@ static int x1_platform_owner_stopped(void *context)
+ 	return 0;
+ }
+ 
++/* Omarchy flavor: an Eject or a pulled retirement ends where the idle
++ * power-down ends, with the stop's resets and the tunnel BCR released and no
++ * runtime vote, so that gcc_usb4_0_gdsc can go off and a system resume can
++ * power it on by itself. Order and conditions are the ones the next start
++ * released them under: domain on, clocks off, the router's resets first.
++ * Caller holds the vote that kept the domain on; a failure retains it.
++ */
++static int x1_retired_release(struct x1_host *host)
++{
++	int ret;
++
++	host->runtime_held = true;
++	ret = x1_stop_release_resets(host);
++	if (!ret)
++		ret = qcom_usb4_x1_release_retired_reset(host->dev);
++	if (ret)
++		return ret;
++	pm_runtime_put_sync(host->dev);
++	host->runtime_held = false;
++	return 0;
++}
++
+ static int x1_retire_session(struct x1_host *host)
+ {
+ 	struct tb_nhi *nhi = &host->qnhi.nhi;
+@@ -2146,8 +2168,16 @@ static int x1_retire_session(struct x1_host *host)
+ 
+ 	if (ret)
+ 		return ret;
++	/* Omarchy flavor: the platform retirement drops the receiver's forbid,
++	 * the last vote on the router's domain. Keep the domain on until what
++	 * the stop still holds is released.
++	 */
++	if (x1_general)
++		pm_runtime_get_noresume(host->dev);
+ 	ret = qcom_usb4_x1_retire_platform(host->dev, &host->pcie,
+ 					  x1_platform_owner_stopped, host);
++	if (!ret && x1_general)
++		ret = x1_retired_release(host);
+ 	if (ret)
+ 		return ret;
+ 	/* Final domain release completed: no late ctl/domain callback can see
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.c b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+index b833b72..1de6d15 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+@@ -736,12 +736,12 @@ static int x1_pcie_release_retired_reset(struct x1_pcie_context *ctx)
+ 
+ /* gcc_usb4_0_gdsc does not power up while the tunnel BCR is asserted: held,
+  * the router's domain stays "stuck at 'off'"; released first, the same
+- * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it. The
+- * idle retirement releases it here once its context is gone, because a system
+- * resume powers the domain on by itself; the router's start releases what an
+- * Eject still holds, before it asks for its domain. Only the reset provider is
+- * touched. The lease is put again, which never asserts; the next preparation
+- * takes its own. Caller holds owner/lifecycle exclusion.
++ * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it, and
++ * releases it here once its context is gone, because a system resume powers
++ * the domain on by itself. The router's start calls this again before it asks
++ * for its domain. Only the reset provider is touched. The lease is put again,
++ * which never asserts; the next preparation takes its own. Caller holds
++ * owner/lifecycle exclusion.
+  */
+ int qcom_usb4_x1_release_retired_reset(struct device *owner)
+ {

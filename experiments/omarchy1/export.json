@@ -6,9 +6,9 @@
   "public_parent": "fb91281ae218116813331ca561613b1094abcb26",
   "private_sources": {
     "harness": "293ee59d0c02969f98f949c536caf3be5fb06767",
-    "omarchy": "830ce6227458e9d01a0e6d88c9263a2399b88967"
+    "omarchy": "94682e9cbc8cd2954e6062a2e64742c1e44786d4"
   },
-  "hardware_scope": "Read docs/USB4-2026-09-23.md and docs/USB4-2026-10-08.md. Router 0 (left rear port) only; sleep after a router restart hangs.",
+  "hardware_scope": "Read docs/USB4-2026-09-23.md, docs/USB4-2026-10-08.md and docs/USB4-2026-10-09.md. Router 0 (left rear port) only.",
   "private_payloads_included": false,
   "files": [
     {
@@ -103,17 +103,31 @@
       "changes": []
     },
     {
+      "export": "patches/0014-Omarchy-flavor-release-the-tunnel-reset-when-an-idle.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "645ec4c3048ecc99d66e6119d4197e48e3c1891ed2701ea2ca6081feca4669bc",
+      "public_sha256": "645ec4c3048ecc99d66e6119d4197e48e3c1891ed2701ea2ca6081feca4669bc",
+      "changes": []
+    },
+    {
+      "export": "patches/0015-Omarchy-flavor-end-an-Eject-or-pulled-retirement-wit.patch",
+      "source_checkpoint": "format-patch (see README)",
+      "source_sha256": "35af9b8dc9b1f49ec8f34117b0dee4ec392d23fe76238cec4dc0554f591f5eb6",
+      "public_sha256": "35af9b8dc9b1f49ec8f34117b0dee4ec392d23fe76238cec4dc0554f591f5eb6",
+      "changes": []
+    },
+    {
       "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-host.c",
       "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-host.c",
-      "source_sha256": "d36f4c23414bc8685813737dd78a965dfe6a69a410210fbfb20cd99f52bad79e",
-      "public_sha256": "d36f4c23414bc8685813737dd78a965dfe6a69a410210fbfb20cd99f52bad79e",
+      "source_sha256": "31e33ecf0e694882aa0b0f44db6e2d59008c1134be4a788ff412fa190006f078",
+      "public_sha256": "31e33ecf0e694882aa0b0f44db6e2d59008c1134be4a788ff412fa190006f078",
       "changes": []
     },
     {
       "export": "kernel/drivers/thunderbolt/qcom-usb4-x1-pcie.c",
       "source_checkpoint": "src omarchy:drivers/thunderbolt/qcom-usb4-x1-pcie.c",
-      "source_sha256": "ca45ec18cd86db11545010293863cae8a57bad1f554981b6d2a96f4b17f550a8",
-      "public_sha256": "ca45ec18cd86db11545010293863cae8a57bad1f554981b6d2a96f4b17f550a8",
+      "source_sha256": "af585b4c595256ef53be2d31a6c357242fa0ea4b32af4bc4138a64587fc79c29",
+      "public_sha256": "af585b4c595256ef53be2d31a6c357242fa0ea4b32af4bc4138a64587fc79c29",
       "changes": []
     },
     {
@@ -242,8 +256,8 @@
     {
       "export": "tests/test_idle_retire.py",
       "source_checkpoint": "tests/test_idle_retire.py",
-      "source_sha256": "d2b3d355bd8e98c9cd66f9d8bb8c131e484665ff60346e7d1856b23cecffa0e8",
-      "public_sha256": "855fa10811d75f8105c74430ff13e62b3ac06980d0de1b7871e63227dacaf68e",
+      "source_sha256": "aca678dd3f7364b00aa5b17aebe9016decfc177e07b4c79a30fb733887daf653",
+      "public_sha256": "a8d1a01e97a1499f1f2b48dfa14b0ff9a320ae914076777d878fbffab3ff4211",
       "changes": [
         "path: SRC = HERE.parent / 'src' -> published layout",
         "path: return subprocess.run(['git', '-C', str(SRC), 'show', BASE + ':' + str -> published layout"
@@ -264,6 +278,13 @@
       "changes": []
     },
     {
+      "export": "tests/test_retired_release.py",
+      "source_checkpoint": "tests/test_retired_release.py",
+      "source_sha256": "600e3a8a99f9df02149d64452bef94ebfdb3cc12f1be14c7c8180705a00925ff",
+      "public_sha256": "600e3a8a99f9df02149d64452bef94ebfdb3cc12f1be14c7c8180705a00925ff",
+      "changes": []
+    },
+    {
       "export": "tests/test_power_domain.py",
       "source_checkpoint": "tests/test_power_domain.py",
       "source_sha256": "f0daacbfc5619d7a4140cc403746bb9c8aae53205f319fcfd253a46df04626f2",
@@ -271,9 +292,10 @@
       "changes": []
     }
   ],
-  "updated": "2026-10-08",
-  "updated_public_parent": "805a55048d60ee1339850dd93beb00c0d06bb695",
+  "updated": "2026-10-09",
+  "updated_public_parent": "7459f69ccd5bd8bce317e3f172baebe564f2835f",
   "notes": [
-    "Patches 0011 to 0013 ran on hardware (8 October 2026) as a build of the same code with some comment sentences worded differently; no code line differs and no line moved."
+    "Patches 0011 to 0013 ran on hardware (8 October 2026) as a build of the same code with some comment sentences worded differently; no code line differs and no line moved.",
+    "Patches 0014 and 0015 ran on hardware (9 October 2026) as builds of the same two trees; their commit messages were written out afterwards."
   ]
 }
