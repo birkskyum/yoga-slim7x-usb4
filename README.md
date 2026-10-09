@@ -1,5 +1,12 @@
 # Yoga Slim 7x USB4 development
 
+**9 October 2026 update:** sleep and wake now work with USB4, with the router
+powered down and with a drive connected. A system resume powers the router's
+domain on by itself, and that stuck while a stop still held the PCIe tunnel
+reset. Every stop now releases it before the domain can go off. The suspend
+hang after a router restart has not shown again. See the
+[9 October report](docs/USB4-2026-10-09.md).
+
 **8 October 2026 update:** the USB4 router's power domain can now be switched
 off and powers up again, so the always-on workaround is gone. It takes the
 PCIe tunnel reset released and the system clock's selector moved before the
@@ -43,6 +50,7 @@ not included. See [publication changes](docs/PROVENANCE.md).
 
 ## Start here
 
+- [9 October report: sleep and wake](docs/USB4-2026-10-09.md)
 - [8 October report: the router's power domain](docs/USB4-2026-10-08.md)
 - [23 September report](docs/USB4-2026-09-23.md)
 - [22 September report: Qualcomm's MSI route and verified I/O](docs/EL1-USB4-2026-09-22.md)

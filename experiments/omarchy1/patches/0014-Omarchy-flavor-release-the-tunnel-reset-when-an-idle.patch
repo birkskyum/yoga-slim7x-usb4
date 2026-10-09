@@ -1,0 +1,85 @@
+From 4b570d391c5f824532c3e8b6ee6de6c5a09d4462 Mon Sep 17 00:00:00 2001
+From: Birk Skyum <birk.skyum@pm.me>
+Date: Fri, 9 Oct 2026 00:35:55 +0200
+Subject: [PATCH 14/15] Omarchy flavor: release the tunnel reset when an idle
+ power-down ends, so a system resume can power the router's domain on
+
+genpd powers every domain with an attached device on in the noirq phase
+of a system resume, whatever the device's runtime PM state, and queues
+the power-off again afterwards. The router's platform device stays
+attached to gcc_usb4_0_gdsc while the router is powered down for sleep,
+so that power-on happens without this driver.
+
+The idle power-down left GCC_PCIE_0_TUNNEL_BCR asserted until the next
+start released it. gcc_usb4_0_gdsc does not power up while that reset
+is asserted, so every resume stuck the domain ("status stuck at
+'off'"), the power-off after it stuck too ("stuck at 'on'"), and the
+next start of the router failed with -16.
+
+The idle power-down now releases the tunnel reset once the PCIe
+preparation is retired, before its runtime vote goes and the domain can
+go off. The start keeps its own call for what an Eject still holds.
+
+Hardware (Yoga Slim 7x, 9 October 2026). Without this change the
+pm_test levels freezer and devices passed, and platform, the first
+with the noirq phases, stuck the domain on the way back (boot
+2a77a7cf). With it, five pm_test levels and real deep and s2idle
+sleeps passed on two sessions of the router, a suspend through systemd
+brought the router back by itself, and a drive connected afterwards.
+genpd counted 13 power-offs of the domain and refused none (boot
+06d4e5e7).
+---
+ drivers/thunderbolt/qcom-usb4-x1-host.c |  7 +++++++
+ drivers/thunderbolt/qcom-usb4-x1-pcie.c | 14 ++++++++------
+ 2 files changed, 15 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-host.c b/drivers/thunderbolt/qcom-usb4-x1-host.c
+index b586772..fa64a8f 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-host.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-host.c
+@@ -2504,6 +2504,13 @@ static ssize_t idle_retire_once_store(struct device *dev,
+ 	host->idle_retire_stage = "platform-retire";
+ 	ret = qcom_usb4_x1_idle_retire_platform(dev, &host->pcie,
+ 						x1_idle_platform_owner_stopped, host);
++	if (ret)
++		goto done;
++	/* A system resume powers gcc_usb4_0_gdsc on without this driver, so the
++	 * tunnel BCR is not left held once the router's domain may go off.
++	 */
++	host->idle_retire_stage = "tunnel-reset-release";
++	ret = qcom_usb4_x1_release_retired_reset(dev);
+ 	if (ret)
+ 		goto done;
+ 	devm_kfree(host->dev, nhi->tx_rings);
+diff --git a/drivers/thunderbolt/qcom-usb4-x1-pcie.c b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+index a9553d1..b833b72 100644
+--- a/drivers/thunderbolt/qcom-usb4-x1-pcie.c
++++ b/drivers/thunderbolt/qcom-usb4-x1-pcie.c
+@@ -736,10 +736,12 @@ static int x1_pcie_release_retired_reset(struct x1_pcie_context *ctx)
+ 
+ /* gcc_usb4_0_gdsc does not power up while the tunnel BCR is asserted: held,
+  * the router's domain stays "stuck at 'off'"; released first, the same
+- * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it, so the
+- * router's next start releases it here, before it asks for its domain. Only
+- * the reset provider is touched. The lease is put again, which never asserts;
+- * the next preparation takes its own. Caller holds owner/lifecycle exclusion.
++ * power-on works (Yoga Slim 7x, 8 October 2026). A retirement holds it. The
++ * idle retirement releases it here once its context is gone, because a system
++ * resume powers the domain on by itself; the router's start releases what an
++ * Eject still holds, before it asks for its domain. Only the reset provider is
++ * touched. The lease is put again, which never asserts; the next preparation
++ * takes its own. Caller holds owner/lifecycle exclusion.
+  */
+ int qcom_usb4_x1_release_retired_reset(struct device *owner)
+ {
+@@ -2190,8 +2192,8 @@ out:
+ 
+ /* Omarchy flavor: release a PCIe0 preparation that never trained, allocated a
+  * bridge or receiver, or took the receiver's module pin. Same provider order
+- * as qcom_usb4_x1_retire_platform(); the tunnel BCR stays asserted for the
+- * next generation's preparation.
++ * as qcom_usb4_x1_retire_platform(); the tunnel BCR is still asserted on
++ * return, and the caller releases it before the router's domain goes off.
+  */
+ int qcom_usb4_x1_idle_retire_platform(struct device *owner, struct x1_pcie_state *state,
+ 				      int (*check_stopped)(void *), void *context)

@@ -275,10 +275,10 @@ struct x1_host {
  struct qcom_usb4_nhi_retire control_retire;
  int idle_retire_error; const char *idle_retire_stage;
 };
-enum { FREEZE = 1, STOP, POWER, CONTROL, DOMAIN, PLATFORM };
+enum { FREEZE = 1, STOP, POWER, CONTROL, DOMAIN, PLATFORM, TUNNEL };
 static bool x1_general, x1_managed, x1_host_quiesce, x1_power_quiesce, x1_control_retire, x1_cm_retire, admin, trylock_fail;
 static int infos, kfrees, destroyed, freeze_result, stop_result, bad_receipt, power_result;
-static int control_result, domain_result, platform_result;
+static int control_result, domain_result, platform_result, tunnel_result;
 static struct device dev;
 static struct tb_ctl ctl;
 static struct tb tb;
@@ -333,6 +333,11 @@ static int qcom_usb4_x1_idle_retire_platform(struct device *o, struct x1_pcie_st
  assert(o == &dev && s == &host.pcie && check == x1_idle_platform_owner_stopped && ctx == &host);
  assert(all_locks() && !host.lock && !tb.lock); note(PLATFORM); return platform_result;
 }
+/* The tunnel reset goes while the router's runtime vote still keeps its domain on. */
+static int qcom_usb4_x1_release_retired_reset(struct device *o) {
+ assert(o == &dev && all_locks() && !host.lock && !tb.lock && pm_holds == 1 && !host.fully_retired);
+ note(TUNNEL); return tunnel_result;
+}
 static void reset(void) {
  memset(&host, 0, sizeof(host)); memset(&tb, 0, sizeof(tb)); memset(&dev, 0, sizeof(dev));
  tb.ctl = &ctl; host.dev = &dev; host.tb = &tb;
@@ -341,7 +346,7 @@ static void reset(void) {
  x1_general = x1_managed = x1_host_quiesce = x1_power_quiesce = x1_control_retire = x1_cm_retire = admin = true;
  trylock_fail = false;
  infos = kfrees = destroyed = freeze_result = stop_result = bad_receipt = power_result = pm_holds = 0;
- control_result = domain_result = platform_result = 0; ncalls = 0;
+ control_result = domain_result = platform_result = tunnel_result = 0; ncalls = 0;
 }
 static bool unlocked(void) { return !dev.lock && !host.bind_lock && !host.lifecycle_lock && !host.lock && !tb.lock; }
 static bool kept(void) {
@@ -366,14 +371,14 @@ int main(void) {
  int refusals = 0, faults = 0;
  reset();
  assert(store(token) == (ssize_t)strlen(token) && unlocked());
- int ok[] = { FREEZE, STOP, POWER, CONTROL, DOMAIN, PLATFORM };
- assert(order(ok, 6));
+ int ok[] = { FREEZE, STOP, POWER, CONTROL, DOMAIN, PLATFORM, TUNNEL };
+ assert(order(ok, 7));
  assert(host.idle_retire_attempted && host.idle_retired && host.fully_retired && host.stopping && !host.ready);
  assert(!host.batch_waiting && host.batch_terminal && host.error == -ESHUTDOWN && !strcmp(host.batch_step, "idle-power-down"));
  assert(!host.idle_retire_error && !strcmp(host.idle_retire_stage, "idle-retired"));
  assert(host.host_stop.finished && !host.host_stop.error && kfrees == 2 && destroyed == 1 && !pm_holds);
  assert(!host.qnhi.nhi.tx_rings && !host.qnhi.nhi.rx_rings);
- assert(store(token) == -EALREADY && unlocked() && ncalls == 6);
+ assert(store(token) == -EALREADY && unlocked() && ncalls == 7);
 
  /* Refusals before the freeze take no stage and keep the session usable. */
 #define REFUSE(setup, err) do { reset(); setup; memcpy(&before, &host, sizeof(host)); \
@@ -408,7 +413,7 @@ int main(void) {
  assert(store(token) == -EBUSY && unlocked() && ncalls == 1 && kept());
  assert(host.idle_retire_error == -EBUSY && !strcmp(host.idle_retire_stage, "refused-session-kept"));
  freeze_result = 0; ncalls = 0;
- assert(store(token) == (ssize_t)strlen(token) && order(ok, 6) && host.fully_retired); refusals++;
+ assert(store(token) == (ssize_t)strlen(token) && order(ok, 7) && host.fully_retired); refusals++;
 
  /* Every fault after the freeze is terminal at its own stage. */
  reset(); stop_result = -EBUSY; terminal(-EBUSY, "stop-control", 2);
@@ -418,7 +423,8 @@ int main(void) {
  reset(); control_result = -ETIMEDOUT; terminal(-ETIMEDOUT, "control-retire", 4); faults++;
  reset(); domain_result = -ETIMEDOUT; terminal(-ETIMEDOUT, "domain-retire", 5); faults++;
  reset(); platform_result = -EPERM; terminal(-EPERM, "platform-retire", 6); faults++;
- printf("PASS idle store: ordered six stages, %d refusals keep the session, %d faults terminal\n", refusals, faults);
+ reset(); tunnel_result = -EIO; terminal(-EIO, "tunnel-reset-release", 7); faults++;
+ printf("PASS idle store: ordered seven stages, the tunnel reset released before the vote goes, %d refusals keep the session, %d faults terminal\n", refusals, faults);
  return 0;
 }
 '''
@@ -679,7 +685,8 @@ class IdleRetire(unittest.TestCase):
 
     def test_reused_harness_functions_unchanged(self):
         for path, names in ((TB, ('tb_x1_retire_cm', 'tb_x1_cm_retire_check')),
-                            (HOST, ('x1_power_stop_run', 'x1_retire_domain', 'x1_retire_session',
+                            # x1_retire_session() left this list when retirements got their own release: see test_retired_release.py.
+                            (HOST, ('x1_power_stop_run', 'x1_retire_domain',
                                     'host_quiesce_once_store', 'power_quiesce_once_store')),
                             (PCIE, ('qcom_usb4_x1_retire_platform',)),
                             (SRC / 'drivers/thunderbolt/ctl.c', ('tb_ctl_stop_x1_retained',
