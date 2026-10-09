@@ -3,9 +3,10 @@
 **9 October 2026 update:** sleep and wake now work with USB4, with the router
 powered down and with a drive connected. A system resume powers the router's
 domain on by itself, and that stuck while a stop still held the PCIe tunnel
-reset. Every stop now releases it before the domain can go off. The suspend
-hang after a router restart has not shown again. See the
-[9 October report](docs/USB4-2026-10-09.md).
+reset. Every stop now releases it before the domain can go off. Eight of
+nine real sleeps came back. The one that did not came with an unresponsive
+Wi-Fi firmware and did not reproduce, so a suspend hang is not ruled out.
+See the [9 October report](docs/USB4-2026-10-09.md).
 
 **8 October 2026 update:** the USB4 router's power domain can now be switched
 off and powers up again, so the always-on workaround is gone. It takes the

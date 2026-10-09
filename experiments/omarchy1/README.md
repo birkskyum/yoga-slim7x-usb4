@@ -67,9 +67,10 @@ restart it adopts an idle or retired router instead of failing.
 - One port. On that port the experimental device tree limits the USB
   controller to USB 2 and disables DisplayPort, because the router holds the
   PHY while it waits. Qualcomm's per-attach model avoids that.
-- The suspend hang after a router restart from the earlier reports has not
-  shown again with patches 0014 and 0015. Three deep sleeps after a restart
-  came back. Its cause was not found.
+- Of nine real sleeps on the builds of patches 0014 and 0015, eight came
+  back and one did not (boot e4536699, with the Wi-Fi firmware unresponsive
+  beforehand). That one did not reproduce. Neither it nor the hang from the
+  earlier reports is explained.
 - Hibernation is untested and expected to stop USB4 until a restart.
 - The router firmware is required and not included; the report says where
   it comes from.
